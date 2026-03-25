@@ -8,11 +8,11 @@ import (
 )
 
 // Step はワークフロー内の個々の実行ステップを定義します。
-// ステップのタイプ（llm_task / loop / command_task）に応じて異なるフィールドが使用されます。
+// ステップのタイプ（llm_task / loop / command_task / git_branch）に応じて異なるフィールドが使用されます。
 type Step struct {
 	// 共通フィールド
 	ID   string `yaml:"id"`
-	Type string `yaml:"type"` // "llm_task", "loop", "command_task"
+	Type string `yaml:"type"` // "llm_task", "loop", "command_task", "git_branch"
 
 	// llm_task 用フィールド
 	AgentRole        string `yaml:"agent_role,omitempty"`
@@ -27,6 +27,9 @@ type Step struct {
 	FixerModel      string `yaml:"fixer_model,omitempty"`
 	FixerPromptFile string `yaml:"fixer_prompt_file,omitempty"`
 	TargetFile      string `yaml:"target_file,omitempty"`
+
+	// git_branch 用フィールド
+	BranchName string `yaml:"branch_name,omitempty"`
 }
 
 // Workflow はYAMLで定義された一連の開発パイプラインを管理する構造体です。
@@ -92,6 +95,10 @@ func validateWorkflow(wf *Workflow) error {
 		case "command_task":
 			if step.Command == "" {
 				return fmt.Errorf("step %q: command is required for command_task", step.ID)
+			}
+		case "git_branch":
+			if step.BranchName == "" {
+				return fmt.Errorf("step %q: branch_name is required for git_branch", step.ID)
 			}
 		default:
 			return fmt.Errorf("step %q: unknown type %q", step.ID, step.Type)

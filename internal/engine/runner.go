@@ -30,6 +30,17 @@ func NewEngine(logger *slog.Logger) *Engine {
 func (e *Engine) Run(wf *Workflow) error {
 	e.Logger.Info("Starting workflow", "name", wf.Name, "steps", len(wf.Steps))
 
+	// 現在のブランチを確認（保護ブランチでの直接実行を防止）
+	currentBranch, err := fs.GetCurrentBranch()
+	if err != nil {
+		e.Logger.Warn("Could not determine current git branch", "error", err)
+	} else if fs.IsProtectedBranch(currentBranch) {
+		// 保護ブランチの場合、ワークフローの最初のステップが git_branch でない限り実行を拒否
+		if len(wf.Steps) > 0 && wf.Steps[0].Type != "git_branch" {
+			return fmt.Errorf("direct execution on protected branch %q is not allowed. Please use 'git_branch' step or switch to a feature branch", currentBranch)
+		}
+	}
+
 	for i, step := range wf.Steps {
 		e.Logger.Info("Executing step",
 			"index", i+1,
@@ -46,6 +57,8 @@ func (e *Engine) Run(wf *Workflow) error {
 			err = e.runTestLoop(step)
 		case "command_task":
 			err = e.runCommandTask(step)
+		case "git_branch":
+			err = e.runGitBranch(step)
 		default:
 			err = fmt.Errorf("unknown step type: %s", step.Type)
 		}
@@ -225,6 +238,21 @@ func (e *Engine) runFixer(step Step, errOutput string) error {
 func (e *Engine) runCommandTask(step Step) error {
 	e.Logger.Info("Running command", "command", step.Command)
 	return runShellCommand(step.Command)
+}
+
+// runGitBranch は git_branch タイプのステップを実行します。
+func (e *Engine) runGitBranch(step Step) error {
+	branchName := step.BranchName
+	// "feature/" プレフィックスを強制（または推奨）
+	if !strings.HasPrefix(branchName, "feature/") && !strings.HasPrefix(branchName, "fix/") {
+		branchName = "feature/" + branchName
+	}
+
+	e.Logger.Info("Creating new branch", "name", branchName)
+	if err := fs.CreateBranch(branchName); err != nil {
+		return fmt.Errorf("failed to create branch: %w", err)
+	}
+	return nil
 }
 
 // runShellCommand は sh -c でシェルコマンドを実行し、結合されたエラー出力を返します。
