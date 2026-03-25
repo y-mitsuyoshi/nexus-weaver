@@ -1,5 +1,15 @@
 FROM golang:1.24-alpine AS builder
 
+# テスト実行時に git を使うため、ビルダーステージにもインストール
+RUN apk add --no-cache git && \
+    git config --global user.email "nexus-weaver@test.local" && \
+    git config --global user.name "Nexus Weaver Test" && \
+    git config --global --add safe.directory /app
+
+# バージョン情報（docker build --build-arg で上書き可能）
+ARG VERSION=dev
+ARG COMMIT=unknown
+
 WORKDIR /app
 
 # Copy module definitions
@@ -9,8 +19,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN go build -o /nexus-weaver ./cmd/nexus-weaver
+# Build the application with version info
+RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+    -o /nexus-weaver ./cmd/nexus-weaver
 
 # Use a lightweight alpine image for runtime
 FROM alpine:latest

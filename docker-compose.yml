@@ -8,3 +8,14 @@ services:
       - .:/app
     # Set the default command, allowing you to pass arguments like --dry-run
     command: ["--workflow", "workflows/workflow.yml"]
+
+  # テスト実行用サービス（Go ビルドイメージを使用）
+  test:
+    build:
+      context: .
+      target: builder
+    working_dir: /app
+    volumes:
+      - .:/app
+    entrypoint: ["go"]
+    command: ["test", "-v", "-count=1", "./..."]
