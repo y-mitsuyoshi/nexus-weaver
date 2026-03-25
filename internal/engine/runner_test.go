@@ -125,16 +125,15 @@ func TestEngine_RunTestLoop_Failure(t *testing.T) {
 				BranchName: fmt.Sprintf("test-loop-fail-%d", os.Getpid()),
 			},
 			{
-				ID:          "loop-test",
-				Type:        "loop",
-				MaxRetries:  2,
-				Command:     "exit 1",
-				FixerModel:  "unknown-model",
-				TargetFile:  "non-existent.go",
+				ID:         "loop-test",
+				Type:       "loop",
+				MaxRetries: 2,
+				Command:    "exit 1",
+				FixerModel: "unknown-model",
+				TargetFile: "non-existent.go",
 			},
 		},
 	}
-
 
 	err := engine.Run(wf)
 	if err == nil {
