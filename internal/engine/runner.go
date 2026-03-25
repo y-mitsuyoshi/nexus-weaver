@@ -59,6 +59,10 @@ func (e *Engine) Run(wf *Workflow) error {
 			err = e.runCommandTask(step)
 		case "git_branch":
 			err = e.runGitBranch(step)
+		case "review":
+			err = e.runReviewTask(step)
+		case "git_push":
+			err = e.runGitPush(step)
 		default:
 			err = fmt.Errorf("unknown step type: %s", step.Type)
 		}
@@ -252,6 +256,88 @@ func (e *Engine) runGitBranch(step Step) error {
 	if err := fs.CreateBranch(branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
+	return nil
+}
+
+// runReviewTask は review タイプのステップを実行し、ユーザーの承認を求めます。
+func (e *Engine) runReviewTask(step Step) error {
+	provider, err := llm.GetProvider(step.ReviewerModel)
+	if err != nil {
+		return fmt.Errorf("failed to get reviewer: %w", err)
+	}
+
+	reviewPrompt := ""
+	if step.ReviewPromptFile != "" {
+		reviewPrompt, err = fs.ReadFile(step.ReviewPromptFile)
+		if err != nil {
+			return fmt.Errorf("failed to read review prompt: %w", err)
+		}
+	}
+
+	targetContent, err := fs.ReadFile(step.TargetFile)
+	if err != nil {
+		return fmt.Errorf("failed to read target file for review: %w", err)
+	}
+
+	userPrompt := fmt.Sprintf("以下のファイルをレビューしてください:\n\nファイル: %s\n\n内容:\n%s",
+		step.TargetFile, targetContent)
+
+	e.Logger.Info("Running reviewer", "model", step.ReviewerModel)
+	result, err := provider.Generate(reviewPrompt, userPrompt)
+	if err != nil {
+		return fmt.Errorf("review generation failed: %w", err)
+	}
+
+	// レビュー結果を表示
+	fmt.Println("\n================================================================================")
+	fmt.Println("🔍 コードレビュー結果")
+	fmt.Println("================================================================================")
+	fmt.Println(result)
+	fmt.Println("================================================================================")
+
+	// 履歴を保存
+	reviewLogDir := "docs/reviews"
+	reviewLogPath := fmt.Sprintf("%s/review-%s.md", reviewLogDir, step.ID)
+	if err := fs.WriteFile(reviewLogPath, result); err != nil {
+		e.Logger.Warn("Failed to save review log", "error", err)
+	} else {
+		e.Logger.Info("Review log saved", "file", reviewLogPath)
+	}
+
+	// 承認を求める
+	for {
+		fmt.Print("\nこの内容で Approve しますか？ [a]pprove / [r]equest changes / [q]uit: ")
+		var input string
+		fmt.Scanln(&input)
+		input = strings.ToLower(strings.TrimSpace(input))
+
+		switch input {
+		case "a", "approve":
+			e.Logger.Info("Review approved by user")
+			return nil
+		case "r", "request changes":
+			return fmt.Errorf("review rejected by user (Request Changes)")
+		case "q", "quit":
+			os.Exit(0)
+		default:
+			fmt.Println("無効な入力です。'a', 'r', または 'q' を入力してください。")
+		}
+	}
+}
+
+// runGitPush は git_push タイプのステップを実行します。
+func (e *Engine) runGitPush(step Step) error {
+	remote := step.Remote
+	if remote == "" {
+		remote = "origin"
+	}
+
+	e.Logger.Info("Pushing to remote", "remote", remote)
+	if err := fs.Push(remote); err != nil {
+		return fmt.Errorf("failed to push: %w", err)
+	}
+
+	e.Logger.Info("Push completed successfully")
 	return nil
 }
 

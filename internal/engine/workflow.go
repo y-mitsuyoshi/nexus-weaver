@@ -8,11 +8,11 @@ import (
 )
 
 // Step はワークフロー内の個々の実行ステップを定義します。
-// ステップのタイプ（llm_task / loop / command_task / git_branch）に応じて異なるフィールドが使用されます。
+// ステップのタイプ（llm_task / loop / command_task / git_branch / review / git_push）に応じて異なるフィールドが使用されます。
 type Step struct {
 	// 共通フィールド
 	ID   string `yaml:"id"`
-	Type string `yaml:"type"` // "llm_task", "loop", "command_task", "git_branch"
+	Type string `yaml:"type"` // "llm_task", "loop", "command_task", "git_branch", "review", "git_push"
 
 	// llm_task 用フィールド
 	AgentRole        string `yaml:"agent_role,omitempty"`
@@ -30,6 +30,13 @@ type Step struct {
 
 	// git_branch 用フィールド
 	BranchName string `yaml:"branch_name,omitempty"`
+
+	// review 用フィールド
+	ReviewerModel    string `yaml:"reviewer_model,omitempty"`
+	ReviewPromptFile string `yaml:"review_prompt_file,omitempty"`
+
+	// git_push 用フィールド
+	Remote string `yaml:"remote,omitempty"`
 }
 
 // Workflow はYAMLで定義された一連の開発パイプラインを管理する構造体です。
@@ -100,6 +107,15 @@ func validateWorkflow(wf *Workflow) error {
 			if step.BranchName == "" {
 				return fmt.Errorf("step %q: branch_name is required for git_branch", step.ID)
 			}
+		case "review":
+			if step.ReviewerModel == "" {
+				return fmt.Errorf("step %q: reviewer_model is required for review", step.ID)
+			}
+			if step.TargetFile == "" {
+				return fmt.Errorf("step %q: target_file is required for review", step.ID)
+			}
+		case "git_push":
+			// remote is optional, defaults to origin
 		default:
 			return fmt.Errorf("step %q: unknown type %q", step.ID, step.Type)
 		}
