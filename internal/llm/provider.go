@@ -13,6 +13,8 @@ func GetProvider(modelName string) (LLMProvider, error) {
 	switch modelName {
 	case "gemini-cli":
 		return &GeminiCLI{}, nil
+	case "copilot-cli":
+		return &CopilotCLI{}, nil
 	case "local-qwen":
 		return &LocalQwen{
 			Endpoint: "http://localhost:11434/v1/chat/completions",

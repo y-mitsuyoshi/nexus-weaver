@@ -4,6 +4,7 @@ import "testing"
 
 // コンパイル時のインターフェース準拠チェック
 var _ LLMProvider = (*GeminiCLI)(nil)
+var _ LLMProvider = (*CopilotCLI)(nil)
 var _ LLMProvider = (*LocalQwen)(nil)
 
 func TestGetProvider_GeminiCLI(t *testing.T) {
@@ -13,6 +14,16 @@ func TestGetProvider_GeminiCLI(t *testing.T) {
 	}
 	if _, ok := provider.(*GeminiCLI); !ok {
 		t.Errorf("expected *GeminiCLI, got %T", provider)
+	}
+}
+
+func TestGetProvider_CopilotCLI(t *testing.T) {
+	provider, err := GetProvider("copilot-cli")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := provider.(*CopilotCLI); !ok {
+		t.Errorf("expected *CopilotCLI, got %T", provider)
 	}
 }
 
