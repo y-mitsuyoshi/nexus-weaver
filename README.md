@@ -2,21 +2,27 @@
 
 `nexus-weaver` は、YAML で定義したワークフローに従って複数の LLM を切り替えながら処理を進める、Go 製の CLI オーケストレーターです。
 
-PRD 作成、設計、実装、テスト実行、コマンド実行といった工程を 1 本のパイプラインとして表現できます。
+PRD 作成、設計、実装、テスト実行、コードレビュー、ブランチ作成、リモートへのPush、コマンド実行といった工程を 1 本のパイプラインとして表現できます。
 
 ## できること
 
 - YAML でワークフローを定義する
 - ステップごとに `gemini-cli` / `copilot-cli` / `local-qwen` を切り替える
 - 入力ファイルを読み、LLM の出力をファイルへ保存する
-- テストコマンドをリトライ付きで実行する
-- 任意のシェルコマンドをワークフローの最後に実行する
+- 新規 Git ブランチを作成する (`git_branch`)
+- レビュアーLLMによるコードレビューと対話的な自動修正 (`review`)
+- テストコマンドをリトライ付きで実行し、失敗時に自動修正する (`loop`)
+- 変更をリモートリポジトリにプッシュする (`git_push`)
+- 任意のシェルコマンドをワークフローの任意の箇所に組み込む (`command_task`)
 
 ## 現在の実装状況
 
-`loop` ステップはテスト失敗時に Fixer モデルを呼び出し、Fixer の応答からフェンスドコードブロック（```...```）を抽出して、ワークフローで指定した `target_file` に書き込む処理が実装されています。`loop` を使用する場合は必ず `target_file` を指定してください。
+LLM を用いたタスク実行 (`llm_task`)、テストの自動修正ループ (`loop`) に加えて、以下の機能が実装されています。
+- `git_branch`: 動的に生成したブランチ名での新規ブランチ作成
+- `review`: LLMによるファイル内容のレビューと対話的な承認・修正プロセス。連続する review ステップは「レビューゲート」としてグループ化され、いずれかのレビューで修正が発生した場合は、全体の一貫性を保つためにゲート全体のレビューを最初からやり直します。
+- `git_push`: リモートへのプッシュ
 
-
+`loop` や `review` ステップでは、実行前の状態をコミット（AutoCommit）し、複数回のリトライが失敗したりユーザーがリジェクトした場合には、自動的にロールバックが行われます。
 
 ## ディレクトリ構成
 
@@ -114,48 +120,45 @@ docker compose run --rm nexus-weaver
 ```yaml
 name: "Feature Development Pipeline"
 steps:
+  - id: "generate_branch_name"
+    type: "llm_task"
+    agent_role: "ReleaseEngineer"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/branch_namer.md"
+    input_file: "./inbox/idea.txt"
+    output_file: "./docs/branch_name.txt"
+
+  - id: "branch_creation"
+    type: "git_branch"
+    branch_name_file: "./docs/branch_name.txt"
+
   - id: "prd_generation"
     type: "llm_task"
     agent_role: "ProductManager"
     model: "gemini-cli"
-    system_prompt_file: "./prompts/pm.txt"
+    system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
 
-  - id: "architecture_design"
-    type: "llm_task"
-    agent_role: "Architect"
-    model: "gemini-cli"
-    system_prompt_file: "./prompts/architect.txt"
-    input_file: "./docs/prd.md"
-    output_file: "./docs/architecture.md"
-
-  - id: "implementation"
-    type: "llm_task"
-    agent_role: "Engineer"
-    model: "local-qwen"
-    system_prompt_file: "./prompts/engineer.txt"
-    input_file: "./docs/architecture.md"
-    output_file: "./src/main.go"
-
-  - id: "test_and_fix_loop"
-    type: "loop"
+  - id: "prd_review"
+    type: "review"
+    reviewer_model: "gemini-cli"
+    review_prompt_file: "./prompts/prd_reviewer.md"
+    target_file: "./docs/prd.md"
     max_retries: 3
-    command: "go test ./..."
     fixer_model: "gemini-cli"
-    fixer_prompt_file: "./prompts/fixer.txt"
-    target_file: "./src/main.go"
+    fixer_prompt_file: "./prompts/document_fixer.md"
 
-  - id: "create_pr"
-    type: "command_task"
-    command: "gh pr create --title 'Auto PR' --body-file ./docs/prd.md"
+  - id: "push_to_remote"
+    type: "git_push"
+    remote: "origin"
 ```
 
 ## ステップ種別
 
 ### `llm_task`
 
-LLM にテキスト生成を依頼し、その結果を `output_file` に保存します。
+LLM にテキスト生成を依頼し、その結果を `output_file` に保存します。出力ファイルの拡張子（`.go`, `.yml` など）に応じて自動的にコードブロックが抽出されます。
 
 主なフィールド:
 
@@ -179,12 +182,59 @@ LLM にテキスト生成を依頼し、その結果を `output_file` に保存�
 - `max_retries`: 最大試行回数
 - `fixer_model`: 失敗時に呼ぶモデル
 - `fixer_prompt_file`: Fixer 用システムプロンプト
+- `target_file`: 修正対象のファイル
 
 注意点:
 
 - 各リトライ前に Git 自動コミット（AutoCommit）が行われます。これは変更を保護するための安全装置です
-- 最終リトライまで失敗した場合、直前のコミットに戻すために Git の Rollback（`git reset --hard HEAD~1`）が実行されます。これらは破壊的な操作になり得るため注意してください
-- Fixer の応答は `target_file` に自動適用されます（フェンスドコードブロックが抽出されます）
+- 最終リトライまで失敗した場合、直前のコミットに戻すために Git の Rollback（`git reset --hard <HASH>`）が実行されます。
+- Fixer の応答からフェンスドコードブロックが抽出され、`target_file` に自動適用されます。
+
+### `git_branch`
+
+新しい Git ブランチを作成します。保護ブランチ（main, master など）での直接実行を避けるために利用できます。
+
+主なフィールド:
+
+- `id`: ステップの一意な識別子
+- `type`: `git_branch`
+- `branch_name`: 作成するブランチ名（直接指定）
+- `branch_name_file`: ブランチ名が記載されたファイルのパス（`llm_task`の出力などを指定）
+
+注意点:
+- 指定されたブランチ名に `feature/`, `fix/`, `improvement/` のプレフィックスがない場合、自動的に `feature/` が付与されます。
+
+### `review`
+
+対象ファイルを LLM にレビューさせ、対話的な承認プロセスを提供します。
+
+主なフィールド:
+
+- `id`: ステップの一意な識別子
+- `type`: `review`
+- `reviewer_model`: レビューを行うモデル
+- `review_prompt_file`: レビュアー用システムプロンプト
+- `target_file`: レビュー対象のファイル
+- `max_retries`: レビューゲートの最大試行回数（省略可）
+- `fixer_model`: 修正時に呼ぶモデル（省略時は `reviewer_model` が使用されます）
+- `fixer_prompt_file`: Fixer 用システムプロンプト
+
+注意点:
+- 実行時に `[a]pprove / [f]ix & approve / [r]eject / [q]uit` の選択肢が提示されます。
+- `f` (fix & approve) を選択すると、`fixer_model` に指摘内容と修正を依頼し、`target_file` に適用します。
+- 連続する `review` ステップは「レビューゲート」として扱われ、いずれかで修正が発生するとゲート内の全レビューを最初からやり直します。
+- ゲート開始前に AutoCommit が行われ、リジェクト時やリトライ上限到達時にはロールバックされます。
+- レビュー結果は `docs/reviews/review-<ID>.md` に保存されます。
+
+### `git_push`
+
+現在のブランチをリモートリポジトリにプッシュします。
+
+主なフィールド:
+
+- `id`: ステップの一意な識別子
+- `type`: `git_push`
+- `remote`: プッシュ先のリモート名（省略時は `origin`）
 
 ### `command_task`
 
@@ -199,32 +249,21 @@ LLM にテキスト生成を依頼し、その結果を `output_file` に保存�
 ## 実行の流れ
 
 1. CLI がワークフロー YAML を読み込む
-2. 各ステップの定義を検証する
-3. `llm_task` は入力ファイルを読み、LLM の出力をファイルへ保存する
-4. `loop` はコマンドを実行し、失敗時は Fixer モデルを呼ぶ
-5. `command_task` は指定コマンドをそのまま実行する
-
-## よくある実行例
-
-### PRD 生成だけを試したい
-
-ワークフローを最小構成にして `llm_task` を 1 つだけ置くと、テキスト生成ツールとして使えます。
-
-### ローカル LLM でコード生成したい
-
-`implementation` ステップの `model` を `local-qwen` にし、ローカルの OpenAI 互換 API を起動した状態で実行します。
-
-### GitHub CLI と組み合わせて PR を作りたい
-
-最後に `command_task` で `gh pr create ...` を実行すると、生成した PRD や要約を使って PR 作成を自動化できます。
+2. 各ステップの定義を検証し、保護ブランチのチェックを行う（直接実行の防止）
+3. `git_branch` で新しいブランチを作成する（定義されている場合）
+4. `llm_task` は入力ファイルを読み、LLM の出力をファイルへ保存する
+5. `loop` はコマンドを実行し、失敗時は Fixer モデルを呼ぶ
+6. `review` は対話的なレビューを実施し、必要に応じて自動修正・再レビュー（レビューゲート）を行う
+7. `git_push` でリモートにプッシュする
+8. `command_task` は指定コマンドをそのまま実行する
 
 ## 注意事項
 
 - `command_task` は `sh -c` で実行されるため、コマンド内容は慎重に管理してください
-- `AutoCommit`（自動コミット）と `Rollback`（直前コミットへのリセット）は `loop` ステップ内で使用されます。動作の詳細:
-  - AutoCommit はテスト実行前に作業ツリーの変更をステージしてコミットします。変更が無い場合はコミットを作成しません。
-  - AutoCommit はコミット実行前の HEAD のハッシュ（pre-test snapshot）を記録します。最終リトライで失敗した場合はそのハッシュに `git reset --hard <HASH>` でロールバックします。
-  - リポジトリに初期コミットが存在しない場合は pre-test のハッシュは記録されず、RollBack はスキップされます。
+- `AutoCommit`（自動コミット）と `Rollback`（直前コミットへのリセット）は `loop` および `review` ステップ内で使用されます。動作の詳細:
+  - AutoCommit は実行前に作業ツリーの変更をステージしてコミットします。変更が無い場合はコミットを作成しません。
+  - 最終リトライで失敗したりユーザーがリジェクトした場合は、そのハッシュに `git reset --hard <HASH>` でロールバックします。
+  - リポジトリに初期コミットが存在しない場合は pre-test のハッシュは記録されず、Rollback はスキップされます。
   - Dockerfile では実行環境内で git の user.name / user.email を設定しています。ローカル実行時は `git config user.email "you@example.com"` と `git config user.name "Your Name"` を設定しておくとコミット失敗を回避できます。
 - Docker イメージには `gemini` や `copilot` CLI 自体は含まれていません。必要に応じてホストまたはイメージ側で用意してください
 
