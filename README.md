@@ -1,116 +1,291 @@
 # nexus-weaver
 
-`nexus-weaver` は、YAML で定義したワークフローに従って複数の LLM（エージェント）を切り替えながら処理を進める、Go 製の CLI オーケストレーターです。
+YAML で定義したワークフローに従い、複数の LLM エージェントを協調させて開発ライフサイクルを自律的に実行する Go 製 CLI オーケストレーターです。
 
-断片的なアイデア（テキスト）から始まり、PRDの作成、アーキテクチャ設計、テスト駆動の自動実装、修正ループ（Lint/Test）、AIコードレビュー、そして Pull Request の作成までを一貫したパイプラインとして全自動または半自動で実行できます。
+**アイデア → PRD → 設計 → 実装 → テスト → コードレビュー → PR 作成** までを 1 本のパイプラインとして自動化します。
 
-## 開発ワークフロー（Feature Development Pipeline）
+## 主な機能
 
-本リポジトリに組み込まれている標準のワークフロー（`workflows/workflow.yml`）は、以下の強力なループで構成されています：
+| ステップタイプ | 概要 |
+|---------------|------|
+| `llm_task` | LLM にテキスト生成を依頼し、結果をファイルに保存 |
+| `loop` | テストコマンド実行 → 失敗時に Fixer LLM で自動修正（リトライ付き） |
+| `review` | LLM によるコードレビューと対話的な承認・自動修正（レビューゲート） |
+| `git_branch` | 動的に生成したブランチ名で新規ブランチを作成 |
+| `git_push` | リモートリポジトリへプッシュ |
+| `command_task` | 任意のシェルコマンド実行（PR 作成など） |
 
-1. **ブランチ作成**: `inbox/idea.txt` からブランチ名を自動生成しチェックアウト
-2. **要件・設計定義**: プロダクトマネージャー（PM）が PRD を作成し、アーキテクトが設計書を作成
-3. **ドキュメントレビュー**: 生成された PRD とアーキテクチャ設計書をそれぞれレビューし、必要に応じて自動修正
-4. **テスト駆動実装**: テストエンジニアが設計書からテストコード（`main_test.go`）を生成し、エンジニアが実装コード（`main.go`）を生成
-5. **フォーマット＆静的解析**: `go fmt` および `go vet` による整形
-6. **テスト・修正ループ (`test_and_fix_loop`)**: テストを実行し、失敗した場合は Fixer モデルが自動でエラーを解析して修正。成功するまで指定回数リトライ
-7. **レビューゲート**: コード・QA・セキュリティの多角的な視点で AI がレビュー。指摘があれば Fixer が自動修正を行い、全てのレビューを再度通過するまでループ（ユーザーによる対話的な Approve/Reject も可能）
-8. **PR作成**: テックリード（TechLead）ロールが PRD を元に適切な PR タイトルと説明文を生成し、GitHub CLI (`gh`) を通じて自動で Pull Request を作成
+### 安全機構
+
+- `loop` / `review` ステップでは実行前に Git 自動コミット（AutoCommit）を行い、リトライ上限到達やリジェクト時に自動ロールバック
+- 保護ブランチ（main, master, develop）での直接実行を防止
+- 連続する `review` ステップはレビューゲートとしてグループ化され、修正発生時にゲート全体を再実行
 
 ## ディレクトリ構成
 
 ```text
 nexus-weaver/
+├── .github/
+│   ├── agents/           # Copilot カスタムエージェント定義
+│   └── workflows/        # GitHub Actions CI
 ├── cmd/nexus-weaver/     # CLI エントリーポイント
 ├── internal/
 │   ├── engine/           # ワークフローパーサー & 実行エンジン
-│   ├── fs/               # ファイル I/O と Git ユーティリティ
+│   ├── fs/               # ファイル I/O・Git ユーティリティ
 │   └── llm/              # LLM プロバイダ実装
-├── prompts/              # システムプロンプト (.md) 各エージェントの役割
-│   ├── architect.md             # アーキテクチャ設計
-│   ├── architecture_reviewer.md # アーキテクチャ設計レビュー (New!)
-│   ├── branch_namer.md          # ブランチ命名
-│   ├── document_fixer.md        # ドキュメント修正 (New!)
-│   ├── engineer.md              # 実装
-│   ├── fixer.md                 # エラー・コード修正
-│   ├── pm.md                    # プロダクト要件定義
-│   ├── prd_reviewer.md          # PRDレビュー (New!)
-│   ├── pr_body.md               # PR説明文の生成
-│   ├── pr_title.md              # PRタイトルの生成
-│   ├── qa.md                    # QAレビュー
-│   ├── reviewer.md              # コードレビュー
-│   ├── security.md              # セキュリティレビュー
-│   └── test_engineer.md         # テストコード生成
+├── prompts/              # エージェントロール別システムプロンプト
 ├── workflows/            # ワークフロー定義 YAML
-├── inbox/                # 初期入力ファイル置き場 (idea.txt など)
-└── docs/                 # 生成物 (PRD, Architecture, PR内容など) が出力されるディレクトリ
+└── docs/                 # 生成物・設計書
 ```
 
 ## 前提条件
 
-### 共通
+- **Docker** および **Docker Compose**
+- **Git**
+- 利用する LLM に応じた外部ツール（後述）
 
-- Go 1.24 以上
-- Git
-- GitHub CLI (`gh`) ※ 最後のPR作成ステップを実行するために必要
+### 利用可能な LLM プロバイダ
 
-### 利用する LLM に応じて必要なもの
+| モデル名 | 用途 | 必要なもの |
+|----------|------|-----------|
+| `gemini-cli` | 高推論タスク（PRD・設計・レビュー） | コンテナ内で `gemini` コマンドが実行可能であること |
+| `copilot-cli` | 汎用コーディング | コンテナ内で `copilot` コマンドが実行可能であること |
+| `local-qwen` | コスト・速度重視の実装タスク | OpenAI 互換 API（Ollama 等）が稼働していること |
 
-- `gemini-cli` を使う場合: `gemini` コマンドが実行できること
-- `copilot-cli` を使う場合: `copilot` コマンドが実行できること
-- `local-qwen` を使う場合: OpenAI 互換 API が稼働していること。エンドポイントは環境変数 `LOCAL_QWEN_ENDPOINT` で指定可能（デフォルト: `http://localhost:11434/v1/chat/completions`）。
+> `local-qwen` のエンドポイントは環境変数 `LOCAL_QWEN_ENDPOINT` で設定可能です（デフォルト: `http://localhost:11434/v1/chat/completions`）。
+> Docker 環境では `docker-compose.yml` の `network_mode: "host"` により、ホスト側の `localhost` に直接到達します（Linux のみ）。
 
 ## セットアップ
 
-### ローカルでビルド・実行する
+### 1. Docker イメージをビルド
 
 ```bash
-go build -o nexus-weaver ./cmd/nexus-weaver
+docker compose build
 ```
 
-## 基本的な使い方
+### 2. 入力ファイルを準備
 
-### 0. アイデアを配置する
-
-`inbox/idea.txt` に、実装したい機能のアイデアや要望を記述します。
-
-### 1. ワークフローを確認する
-
-まずはドライランで YAML の読み込みとバリデーションだけを確認します。
+ワークフローが参照する入力ファイル（例: `inbox/idea.txt`）を配置します。
 
 ```bash
-./nexus-weaver --workflow workflows/workflow.yml --dry-run
+mkdir -p inbox
+echo "実装したい機能のアイデアをここに記述" > inbox/idea.txt
 ```
 
-### 2. ワークフローを実行する
+## 使い方
+
+### ワークフローのバリデーション（ドライラン）
 
 ```bash
-./nexus-weaver --workflow workflows/workflow.yml
+docker compose run --rm nexus-weaver --dry-run
 ```
 
-途中のレビューゲートでは、AI のレビュー結果が画面に表示され、ユーザーに承認（Approve）、修正依頼（Fix）、または拒否（Reject）を求めます。
+### ワークフローの実行
 
-## ステップ種別
+```bash
+docker compose run --rm nexus-weaver
+```
+
+### 詳細ログの有効化
+
+```bash
+docker compose run --rm nexus-weaver --verbose
+```
+
+### カスタムワークフローの指定
+
+```bash
+docker compose run --rm nexus-weaver --workflow workflows/custom.yml
+```
+
+## CLI オプション
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workflow` | `workflows/workflow.yml` | ワークフロー定義 YAML のパス |
+| `--verbose` | `false` | 詳細ログを出力する |
+| `--dry-run` | `false` | 読み込みと検証のみ行い、実行はしない |
+
+## ワークフローの書き方
+
+ワークフローは `name` と `steps` で構成されます。各ステップは `id`（一意）と `type` を持ち、タイプに応じたフィールドを設定します。
+
+```yaml
+name: "Feature Development Pipeline"
+steps:
+  # 1. ブランチ名を LLM に生成させる
+  - id: "generate_branch_name"
+    type: "llm_task"
+    agent_role: "ReleaseEngineer"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/branch_namer.md"
+    input_file: "./inbox/idea.txt"
+    output_file: "./docs/branch_name.txt"
+
+  # 2. ブランチを作成
+  - id: "branch_creation"
+    type: "git_branch"
+    branch_name_file: "./docs/branch_name.txt"
+
+  # 3. PRD を生成
+  - id: "prd_generation"
+    type: "llm_task"
+    agent_role: "ProductManager"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/pm.md"
+    input_file: "./inbox/idea.txt"
+    output_file: "./docs/prd.md"
+
+  # 4. PRD をレビュー（修正→再レビューのゲート）
+  - id: "prd_review"
+    type: "review"
+    reviewer_model: "gemini-cli"
+    review_prompt_file: "./prompts/prd_reviewer.md"
+    target_file: "./docs/prd.md"
+    max_retries: 3
+    fixer_model: "gemini-cli"
+    fixer_prompt_file: "./prompts/document_fixer.md"
+
+  # 5. リモートにプッシュ
+  - id: "push_to_remote"
+    type: "git_push"
+    remote: "origin"
+```
+
+完全なワークフロー例は `workflows/workflow.yml` を参照してください。
+
+## ステップ種別リファレンス
 
 ### `llm_task`
-LLM にテキスト生成を依頼し、その結果を `output_file` に保存します。出力が `.go` や `.yml` の場合、Markdown のコードブロックを自動抽出します。
+
+LLM にテキスト生成を依頼し、結果を `output_file` に保存します。
+出力ファイルの拡張子（`.go`, `.yml` など）に応じて、LLM 応答から自動的にコードブロックが抽出されます。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `llm_task` |
+| `model` | o | `gemini-cli` / `copilot-cli` / `local-qwen` |
+| `agent_role` | | ログ出力用の役割名 |
+| `system_prompt_file` | | システムプロンプトのファイルパス |
+| `input_file` | | 入力ファイルのパス |
+| `output_file` | | 出力先ファイルのパス |
 
 ### `loop`
-テストや検証コマンドを実行し、失敗した場合に Fixer モデルを呼び出します。
-各リトライ前に `AutoCommit` が行われ、最終失敗時には `Rollback` が実行されます。
 
-### `git_branch`
-新しい Git ブランチを作成し、チェックアウトします。保護ブランチでの直接実行を防ぐため、これらのブランチから開始する場合はこのステップが必須です。
-`branch_name` または `branch_name_file` でブランチ名を指定します。
+テストコマンドを実行し、失敗時に Fixer LLM で自動修正するリトライループです。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `loop` |
+| `command` | o | 実行するテストコマンド |
+| `max_retries` | o | 最大リトライ回数（> 0） |
+| `target_file` | o | 修正対象のファイル |
+| `fixer_model` | | 修正に使用するモデル |
+| `fixer_prompt_file` | | Fixer 用システムプロンプト |
+
+- 各リトライ前に AutoCommit で安全装置を確保
+- 最終リトライ失敗時は自動ロールバック
+- Fixer 応答からフェンスドコードブロックを抽出して `target_file` に適用
 
 ### `review`
-LLM によるコードレビューを実行し、ユーザーに対話的な承認を求めます。ユーザーが修正 (`[f]ix`) を指示すると自動でコードを修正し、レビューゲートの最初から再検証します。
+
+対象ファイルを LLM にレビューさせ、ユーザーに対話的な承認を求めます。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `review` |
+| `reviewer_model` | o | レビューを行うモデル |
+| `target_file` | o | レビュー対象のファイル |
+| `review_prompt_file` | | レビュアー用システムプロンプト |
+| `max_retries` | | レビューゲートの最大ラウンド数 |
+| `fixer_model` | | 修正に使用するモデル（省略時は `reviewer_model`） |
+| `fixer_prompt_file` | | Fixer 用システムプロンプト |
+
+- ユーザーに `[a]pprove / [f]ix & approve / [r]eject / [q]uit` の選択肢を提示
+- `f` で Fixer に修正を依頼し `target_file` に適用
+- 連続する `review` ステップはレビューゲートとして扱われ、修正発生時にゲート全体を再実行
+- レビュー結果は `docs/reviews/review-<ID>.md` に保存
+
+### `git_branch`
+
+新しい Git ブランチを作成してチェックアウトします。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `git_branch` |
+| `branch_name` | △ | ブランチ名（直接指定） |
+| `branch_name_file` | △ | ブランチ名が記載されたファイルパス |
+
+- `branch_name` か `branch_name_file` のいずれかが必須
+- `feature/`, `fix/`, `improvement/` プレフィックスがない場合、自動的に `feature/` を付与
 
 ### `git_push`
-現在のブランチを指定されたリモートにプッシュします。
+
+現在のブランチをリモートにプッシュします。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `git_push` |
+| `remote` | | プッシュ先リモート名（デフォルト: `origin`） |
 
 ### `command_task`
-任意のシェルコマンドを実行します。フォーマットや PR 作成などに活用します。
+
+任意のシェルコマンドを `sh -c` で実行します。
+
+| フィールド | 必須 | 説明 |
+|-----------|:----:|------|
+| `id` | o | ステップの一意な識別子 |
+| `type` | o | `command_task` |
+| `command` | o | 実行するコマンド |
+
+## Docker 環境の詳細
+
+### docker-compose.yml
+
+```yaml
+services:
+  nexus-weaver:
+    build: .
+    network_mode: "host"
+    volumes:
+      - .:/app
+    command: ["--workflow", "workflows/workflow.yml"]
+```
+
+- カレントディレクトリを `/app` にマウントし、ワークフローがファイルの読み書き・Git 操作を行える状態にします
+- `network_mode: "host"` により、ホスト上で動作する `local-qwen`（Ollama 等）に `localhost` で到達可能です（**Linux のみ**。macOS/Windows の Docker Desktop では `host.docker.internal` への変更が必要です）
+- コンテナ内で Git の `user.name` / `user.email` を自動設定済みのため、AutoCommit が正常に動作します
+
+### LLM CLI ツールの利用
+
+Docker イメージには `gemini` / `copilot` CLI は含まれていません。利用する場合は以下のいずれかの方法で対応してください:
+
+- Dockerfile に CLI のインストールを追加する
+- ホスト側のバイナリをボリュームマウントで `/usr/local/bin/` に配置する
+
+## CI
+
+GitHub Actions で自動テスト・リントが実行されます（`.github/workflows/test.yml`）。
+
+- `gofmt` / `go vet` / `golangci-lint` による静的解析
+- `go test -v -count=1 ./...` によるユニットテスト
+
+## 開発
+
+開発者向けのローカルビルド・テスト手順です。
+
+```bash
+# テスト実行
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
+
+# Docker を使わない場合（Go 1.24 以上が必要）
+go test -v -count=1 ./...
+```
 
 ## License
 

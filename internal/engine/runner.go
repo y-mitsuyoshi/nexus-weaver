@@ -162,7 +162,9 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 				// ユーザーが reject した → ロールバックして終了
 				if preGateHash != "" {
 					e.Logger.Error("Review gate rejected, rolling back")
-					fs.Rollback(preGateHash)
+					if rbErr := fs.Rollback(preGateHash); rbErr != nil {
+						e.Logger.Error("Rollback failed", "error", rbErr)
+					}
 				}
 				return fmt.Errorf("review gate rejected at step %q", reviewStep.ID)
 			}
@@ -184,7 +186,9 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 	// リトライ上限到達
 	if preGateHash != "" {
 		e.Logger.Error("Review gate exhausted, rolling back")
-		fs.Rollback(preGateHash)
+		if rbErr := fs.Rollback(preGateHash); rbErr != nil {
+			e.Logger.Error("Rollback failed", "error", rbErr)
+		}
 	}
 	return fmt.Errorf("review gate exhausted after %d rounds", totalMaxRetries)
 }
@@ -230,11 +234,23 @@ func (e *Engine) runLLMTask(step Step) error {
 
 	if step.OutputFile != "" {
 		outputData := result
-		// Goなどのソースコードファイルの場合はコードブロックを抽出
-		if strings.HasSuffix(step.OutputFile, ".go") || strings.HasSuffix(step.OutputFile, ".yml") {
-			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+		// 出力ファイルの拡張子に応じて優先的に対応する言語のコードブロックを抽出する
+		if strings.HasSuffix(step.OutputFile, ".go") {
+			if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
 				outputData = extracted
-			} else if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
+			} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+				outputData = extracted
+			}
+		} else if strings.HasSuffix(step.OutputFile, ".yml") || strings.HasSuffix(step.OutputFile, ".yaml") {
+			if extracted, err := fs.ExtractCodeBlock(result, "yaml"); err == nil {
+				outputData = extracted
+			} else if extracted, err := fs.ExtractCodeBlock(result, "yml"); err == nil {
+				outputData = extracted
+			} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+				outputData = extracted
+			}
+		} else {
+			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
 			}
 		}
@@ -341,13 +357,19 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 
 	// result からコードブロックを抽出して対象ファイルに適用する
 	fixCode := result
-	// 言語指定なし、または "go" 指定のブロックを探す
-	if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
-		fixCode = extracted
-	} else if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
-		fixCode = extracted
+	// 対象ファイルの拡張子に応じて優先的に対応する言語を探す
+	if strings.HasSuffix(step.TargetFile, ".go") {
+		if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
+			fixCode = extracted
+		} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+			fixCode = extracted
+		} else {
+			e.Logger.Warn("No code block found in fixer response, using full response as fix")
+		}
 	} else {
-		e.Logger.Warn("No code block found in fixer response, using full response as fix")
+		if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+			fixCode = extracted
+		}
 	}
 
 	if err := fs.WriteFile(step.TargetFile, fixCode); err != nil {
@@ -447,7 +469,10 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 		fmt.Print("\nこの内容で Approve しますか？ [a]pprove / [f]ix & approve / [r]eject / [q]uit: ")
 
 		var input string
-		fmt.Scanln(&input)
+		if _, err := fmt.Scanln(&input); err != nil {
+			e.Logger.Warn("Failed to read input", "error", err)
+			continue
+		}
 		input = strings.ToLower(strings.TrimSpace(input))
 
 		switch input {

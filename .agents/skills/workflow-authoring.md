@@ -10,7 +10,7 @@ description: "nexus-weaver のワークフロー YAML を作成・修正する�
 name: "ワークフロー名"
 steps:
   - id: "一意のステップID"
-    type: "llm_task | loop | command_task"
+    type: "llm_task | loop | review | git_branch | git_push | command_task"
     # 以下はタイプに応じて設定
 ```
 
@@ -41,7 +41,43 @@ steps:
   fixer_prompt_file: "./prompts/fixer.txt"  # Fixer のプロンプト
 ```
 
-**必須フィールド**: `id`, `type`, `command`, `max_retries`
+**必須フィールド**: `id`, `type`, `command`, `max_retries`, `target_file`
+
+### `review` — LLM によるコードレビューと対話的承認
+
+```yaml
+- id: "code_review"
+  type: "review"
+  reviewer_model: "gemini-cli"            # レビューを行うモデル
+  review_prompt_file: "./prompts/reviewer.md"  # レビュアー用プロンプト
+  target_file: "./cmd/nexus-weaver/main.go"    # レビュー対象ファイル
+  max_retries: 3                          # レビューゲートの最大ラウンド数
+  fixer_model: "gemini-cli"               # 修正時に使用するモデル
+  fixer_prompt_file: "./prompts/fixer.md"  # Fixer 用プロンプト
+```
+
+**必須フィールド**: `id`, `type`, `reviewer_model`, `target_file`
+
+### `git_branch` — 新規ブランチ作成
+
+```yaml
+- id: "branch_creation"
+  type: "git_branch"
+  branch_name_file: "./docs/branch_name.txt"  # ブランチ名が記載されたファイル
+  # または branch_name: "feature/xxx" で直接指定
+```
+
+**必須フィールド**: `id`, `type`, `branch_name` または `branch_name_file`
+
+### `git_push` — リモートへプッシュ
+
+```yaml
+- id: "push_to_remote"
+  type: "git_push"
+  remote: "origin"  # 省略時は origin
+```
+
+**必須フィールド**: `id`, `type`
 
 ### `command_task` — シェルコマンド実行
 
@@ -60,10 +96,12 @@ steps:
 1. `name` は必須
 2. `steps` は1つ以上必要
 3. 各ステップの `id` は一意であること（重複不可）
-4. `type` は `llm_task`, `loop`, `command_task` のいずれか
+4. `type` は `llm_task`, `loop`, `review`, `git_branch`, `git_push`, `command_task` のいずれか
 5. `llm_task` には `model` が必須
-6. `loop` には `command` と `max_retries` (>0) が必須
-7. `command_task` には `command` が必須
+6. `loop` には `command`, `max_retries` (>0), `target_file` が必須
+7. `review` には `reviewer_model`, `target_file` が必須
+8. `git_branch` には `branch_name` または `branch_name_file` が必須
+9. `command_task` には `command` が必須
 
 ## 利用可能なモデル
 
