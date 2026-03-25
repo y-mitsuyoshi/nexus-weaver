@@ -17,9 +17,15 @@
 - ワークフロー定義の変更は `internal/engine/workflow.go` の Step 構造体にも反映してください
 - 計画ファイル作成時は `.agents/workflows/save_plan.md` のワークフローに従ってください
 
-## サブエージェント & スキル
+## サブエージェント
 
-開発タスクに応じて以下のスキルを活用してください:
+開発タスクに応じて以下のサブエージェント（`.agents/agents/` に定義）を活用してください:
+
+- `.agents/agents/architect.md` — アーキテクチャ設計・技術選定
+- `.agents/agents/reviewer.md` — コードレビュー・品質チェック
+- `.agents/agents/fixer.md` — テスト失敗の自動修正
+
+## スキル
 
 - `.agents/skills/go-development.md` — Go 開発のベストプラクティス
 - `.agents/skills/workflow-authoring.md` — ワークフロー YAML の作成・修正
