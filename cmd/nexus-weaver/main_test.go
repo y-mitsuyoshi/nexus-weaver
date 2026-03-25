@@ -39,12 +39,16 @@ func TestResolveWorkflowPath_DefaultNexus(t *testing.T) {
 	// テスト用の一時ディレクトリで実行
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	// .nexus/workflow.yml を作成
 	nexusDir := filepath.Join(tmpDir, ".nexus")
-	os.MkdirAll(nexusDir, 0755)
+	if err := os.MkdirAll(nexusDir, 0755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(nexusDir, "workflow.yml"), []byte("name: test"), 0644); err != nil {
 		t.Fatalf("テストファイルの作成に失敗: %v", err)
 	}
@@ -62,12 +66,16 @@ func TestResolveWorkflowPath_DefaultNexus(t *testing.T) {
 func TestResolveWorkflowPath_DefaultWorkflows(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	// workflows/workflow.yml を作成（.nexus/ は作らない）
 	wfDir := filepath.Join(tmpDir, "workflows")
-	os.MkdirAll(wfDir, 0755)
+	if err := os.MkdirAll(wfDir, 0755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(wfDir, "workflow.yml"), []byte("name: test"), 0644); err != nil {
 		t.Fatalf("テストファイルの作成に失敗: %v", err)
 	}
@@ -85,14 +93,24 @@ func TestResolveWorkflowPath_DefaultWorkflows(t *testing.T) {
 func TestResolveWorkflowPath_NexusPriority(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	// 両方作成
-	os.MkdirAll(filepath.Join(tmpDir, ".nexus"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, ".nexus", "workflow.yml"), []byte("name: nexus"), 0644)
-	os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, "workflows", "workflow.yml"), []byte("name: workflows"), 0644)
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".nexus"), 0755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".nexus", "workflow.yml"), []byte("name: nexus"), 0644); err != nil {
+		t.Fatalf("ファイル作成に失敗: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "workflows", "workflow.yml"), []byte("name: workflows"), 0644); err != nil {
+		t.Fatalf("ファイル作成に失敗: %v", err)
+	}
 
 	result, err := resolveWorkflowPath("")
 	if err != nil {
@@ -107,8 +125,10 @@ func TestResolveWorkflowPath_NexusPriority(t *testing.T) {
 func TestResolveWorkflowPath_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	_, err := resolveWorkflowPath("")
 	if err == nil {
@@ -120,8 +140,10 @@ func TestResolveWorkflowPath_NoFile(t *testing.T) {
 func TestRunInit(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelWarn, // テスト中はログを抑制
@@ -146,8 +168,10 @@ func TestRunInit(t *testing.T) {
 func TestRunInit_Idempotent(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelWarn,
@@ -188,8 +212,10 @@ func TestDefaultWorkflowPaths(t *testing.T) {
 func TestSaveInitialPrompt_PromptOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelWarn,
@@ -220,12 +246,16 @@ func TestSaveInitialPrompt_PromptOnly(t *testing.T) {
 func TestSaveInitialPrompt_WithRefs(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("ディレクトリ移動に失敗: %v", err)
+	}
 
 	// 参照ファイルを作成
 	refPath := filepath.Join(tmpDir, "spec.md")
-	os.WriteFile(refPath, []byte("# API仕様\n\nGET /users"), 0644)
+	if err := os.WriteFile(refPath, []byte("# API仕様\n\nGET /users"), 0644); err != nil {
+		t.Fatalf("参照ファイルの作成に失敗: %v", err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelWarn,
