@@ -14,6 +14,11 @@ type CopilotCLI struct{}
 // Generate はシステムプロンプトとユーザープロンプトを結合して
 // GitHub Copilot CLI に渡し、応答テキストを返します。
 func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
+	// copilot コマンドの存在確認
+	if _, err := exec.LookPath("copilot"); err != nil {
+		return "", fmt.Errorf("'copilot' command not found in PATH. Please install it first")
+	}
+
 	// GitHub Copilot CLI は chat モードなどで対話的に動作することが多いですが、
 	// ここでは非対話的な生成を想定したプロンプト構築を行います。
 	// Copilot CLI の仕様に合わせて、プロンプトを単一の入力としてまとめます。

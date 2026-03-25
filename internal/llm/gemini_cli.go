@@ -14,6 +14,11 @@ type GeminiCLI struct{}
 // Generate はシステムプロンプトとユーザープロンプトを結合して
 // Gemini CLI に渡し、応答テキストを返します。
 func (g *GeminiCLI) Generate(systemPrompt, userPrompt string) (string, error) {
+	// gemini コマンドの存在確認
+	if _, err := exec.LookPath("gemini"); err != nil {
+		return "", fmt.Errorf("'gemini' command not found in PATH. Please install it first")
+	}
+
 	// プロンプトを構造化して結合
 	combinedPrompt := formatPrompt(systemPrompt, userPrompt)
 
