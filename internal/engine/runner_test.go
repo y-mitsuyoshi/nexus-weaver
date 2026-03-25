@@ -103,12 +103,12 @@ func TestEngine_RunTestLoop_Failure(t *testing.T) {
 		Name: "Test",
 		Steps: []Step{
 			{
-				ID:          "loop-test",
-				Type:        "loop",
-				MaxRetries:  2,
-				Command:     "exit 1",
-				FixerModel:  "unknown-model",
-				TargetFile:  "non-existent.go",
+				ID:         "loop-test",
+				Type:       "loop",
+				MaxRetries: 2,
+				Command:    "exit 1",
+				FixerModel: "unknown-model",
+				TargetFile: "non-existent.go",
 			},
 		},
 	}
