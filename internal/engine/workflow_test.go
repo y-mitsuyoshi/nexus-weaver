@@ -23,6 +23,7 @@ steps:
     command: "go test ./..."
     fixer_model: "gemini-cli"
     fixer_prompt_file: "./prompts/fixer.txt"
+    target_file: "./src/main.go"
   - id: "step3"
     type: "command_task"
     command: "echo done"
