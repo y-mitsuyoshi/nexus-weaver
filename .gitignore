@@ -1,0 +1,24 @@
+# Binaries
+/nexus-weaver
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Antigravity Generated Plans (docs/plans/ 配下のみ除外)
+docs/plans/
+
+# Test coverage/output
+*.out
+*.test
+
+# OS specific files
+.DS_Store
+
+# Go workspaces
+go.work
+go.work.sum
+
+# Environment variables
+.env*

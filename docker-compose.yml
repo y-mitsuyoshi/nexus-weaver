@@ -1,0 +1,10 @@
+services:
+  nexus-weaver:
+    build: .
+    # Use host network so that 'localhost:11434' (Local Qwen) resolves correctly on the host machine
+    network_mode: "host"
+    volumes:
+      # Mount the entire current directory so that the orchestrator can read/write files and make git commits
+      - .:/app
+    # Set the default command, allowing you to pass arguments like --dry-run
+    command: ["--workflow", "workflows/workflow.yml"]

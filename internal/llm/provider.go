@@ -1,0 +1,23 @@
+package llm
+
+import "fmt"
+
+// LLMProvider はエージェントの実装を差し替え可能にするための共通インターフェースです。
+// システムプロンプトとユーザー入力を受け取り、LLMの応答テキストを返します。
+type LLMProvider interface {
+	Generate(systemPrompt, userPrompt string) (string, error)
+}
+
+// GetProvider はモデル名に基づいて適切な LLMProvider 実装を返すファクトリ関数です。
+func GetProvider(modelName string) (LLMProvider, error) {
+	switch modelName {
+	case "gemini-cli":
+		return &GeminiCLI{}, nil
+	case "local-qwen":
+		return &LocalQwen{
+			Endpoint: "http://localhost:11434/v1/chat/completions",
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown LLM provider: %s", modelName)
+	}
+}

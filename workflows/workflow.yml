@@ -1,0 +1,36 @@
+name: "Feature Development Pipeline"
+steps:
+  - id: "prd_generation"
+    type: "llm_task"
+    agent_role: "ProductManager"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/pm.txt"
+    input_file: "./inbox/idea.txt"
+    output_file: "./docs/prd.md"
+
+  - id: "architecture_design"
+    type: "llm_task"
+    agent_role: "Architect"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/architect.txt"
+    input_file: "./docs/prd.md"
+    output_file: "./docs/architecture.md"
+
+  - id: "implementation"
+    type: "llm_task"
+    agent_role: "Engineer"
+    model: "local-qwen"
+    system_prompt_file: "./prompts/engineer.txt"
+    input_file: "./docs/architecture.md"
+    output_file: "./src/main.go"
+
+  - id: "test_and_fix_loop"
+    type: "loop"
+    max_retries: 3
+    command: "go test ./..."
+    fixer_model: "gemini-cli"
+    fixer_prompt_file: "./prompts/fixer.txt"
+
+  - id: "create_pr"
+    type: "command_task"
+    command: "gh pr create --title 'Auto PR' --body-file ./docs/prd.md"
