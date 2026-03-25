@@ -221,7 +221,11 @@ LLM にテキスト生成を依頼し、その結果を `output_file` に保存�
 ## 注意事項
 
 - `command_task` は `sh -c` で実行されるため、コマンド内容は慎重に管理してください
-- `AutoCommit`（自動コミット）と `Rollback`（直前コミットへのリセット）は `loop` ステップ内で使用されます。最終リトライで失敗した場合に Rollback が実行されます。これらはワークツリーを上書きする可能性があるため、未コミットの重要な変更がないことを確認してください。
+- `AutoCommit`（自動コミット）と `Rollback`（直前コミットへのリセット）は `loop` ステップ内で使用されます。動作の詳細:
+  - AutoCommit はテスト実行前に作業ツリーの変更をステージしてコミットします。変更が無い場合はコミットを作成しません。
+  - AutoCommit はコミット実行前の HEAD のハッシュ（pre-test snapshot）を記録します。最終リトライで失敗した場合はそのハッシュに `git reset --hard <HASH>` でロールバックします。
+  - リポジトリに初期コミットが存在しない場合は pre-test のハッシュは記録されず、RollBack はスキップされます。
+  - Dockerfile では実行環境内で git の user.name / user.email を設定しています。ローカル実行時は `git config user.email "you@example.com"` と `git config user.name "Your Name"` を設定しておくとコミット失敗を回避できます。
 - Docker イメージには `gemini` や `copilot` CLI 自体は含まれていません。必要に応じてホストまたはイメージ側で用意してください
 
 ## テスト
