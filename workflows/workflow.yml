@@ -20,6 +20,15 @@ steps:
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
 
+  - id: "prd_review"
+    type: "review"
+    reviewer_model: "gemini-cli"
+    review_prompt_file: "./prompts/prd_reviewer.md"
+    target_file: "./docs/prd.md"
+    max_retries: 3
+    fixer_model: "gemini-cli"
+    fixer_prompt_file: "./prompts/document_fixer.md"
+
   - id: "architecture_design"
     type: "llm_task"
     agent_role: "Architect"
@@ -28,6 +37,23 @@ steps:
     input_file: "./docs/prd.md"
     output_file: "./docs/architecture.md"
 
+  - id: "architecture_review"
+    type: "review"
+    reviewer_model: "gemini-cli"
+    review_prompt_file: "./prompts/architecture_reviewer.md"
+    target_file: "./docs/architecture.md"
+    max_retries: 3
+    fixer_model: "gemini-cli"
+    fixer_prompt_file: "./prompts/document_fixer.md"
+
+  - id: "test_generation"
+    type: "llm_task"
+    agent_role: "TestEngineer"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/test_engineer.md"
+    input_file: "./docs/architecture.md"
+    output_file: "./cmd/nexus-weaver/main_test.go"
+
   - id: "implementation"
     type: "llm_task"
     agent_role: "Engineer"
@@ -35,6 +61,10 @@ steps:
     system_prompt_file: "./prompts/engineer.md"
     input_file: "./docs/architecture.md"
     output_file: "./cmd/nexus-weaver/main.go"
+
+  - id: "format_and_vet"
+    type: "command_task"
+    command: "go fmt ./... && go vet ./..."
 
   - id: "test_and_fix_loop"
     type: "loop"
@@ -65,10 +95,26 @@ steps:
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
 
+  - id: "pr_title_generation"
+    type: "llm_task"
+    agent_role: "TechLead"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/pr_title.md"
+    input_file: "./docs/prd.md"
+    output_file: "./docs/pr_title.txt"
+
+  - id: "pr_body_generation"
+    type: "llm_task"
+    agent_role: "TechLead"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/pr_body.md"
+    input_file: "./docs/prd.md"
+    output_file: "./docs/pr_body.md"
+
   - id: "push_to_remote"
     type: "git_push"
     remote: "origin"
 
   - id: "create_pr"
     type: "command_task"
-    command: "gh pr create --title 'Auto PR' --body-file ./docs/prd.md"
+    command: "gh pr create --title \"$(cat ./docs/pr_title.txt)\" --body-file ./docs/pr_body.md"
