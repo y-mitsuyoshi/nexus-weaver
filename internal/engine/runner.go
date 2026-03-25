@@ -26,7 +26,8 @@ func NewEngine(logger *slog.Logger) *Engine {
 }
 
 // Run はワークフローの全ステップを順番に実行します。
-// 各ステップは Type に応じて異なるロジックで処理されます。
+// 連続する review ステップは「レビューゲート」としてグループ化され、
+// いずれかの review で修正が発生した場合はグループ全体を最初からやり直します。
 func (e *Engine) Run(wf *Workflow) error {
 	e.Logger.Info("Starting workflow", "name", wf.Name, "steps", len(wf.Steps))
 
@@ -41,7 +42,27 @@ func (e *Engine) Run(wf *Workflow) error {
 		}
 	}
 
-	for i, step := range wf.Steps {
+	i := 0
+	for i < len(wf.Steps) {
+		step := wf.Steps[i]
+
+		// 連続する review ステップをレビューゲートとしてグループ化
+		if step.Type == "review" {
+			reviewGroup := e.collectReviewGroup(wf.Steps, i)
+			e.Logger.Info("Review gate detected",
+				"start_index", i+1,
+				"count", len(reviewGroup),
+				"ids", reviewGroupIDs(reviewGroup),
+			)
+
+			if err := e.runReviewGate(reviewGroup); err != nil {
+				return err
+			}
+
+			i += len(reviewGroup)
+			continue
+		}
+
 		e.Logger.Info("Executing step",
 			"index", i+1,
 			"total", len(wf.Steps),
@@ -59,8 +80,6 @@ func (e *Engine) Run(wf *Workflow) error {
 			err = e.runCommandTask(step)
 		case "git_branch":
 			err = e.runGitBranch(step)
-		case "review":
-			err = e.runReviewTask(step)
 		case "git_push":
 			err = e.runGitPush(step)
 		default:
@@ -73,10 +92,101 @@ func (e *Engine) Run(wf *Workflow) error {
 		}
 
 		e.Logger.Info("Step completed", "id", step.ID)
+		i++
 	}
 
 	e.Logger.Info("Workflow completed successfully", "name", wf.Name)
 	return nil
+}
+
+// collectReviewGroup はインデックス start から連続する review ステップを収集します。
+func (e *Engine) collectReviewGroup(steps []Step, start int) []Step {
+	var group []Step
+	for j := start; j < len(steps) && steps[j].Type == "review"; j++ {
+		group = append(group, steps[j])
+	}
+	return group
+}
+
+// reviewGroupIDs はレビューグループのステップID一覧を返します（ログ用）。
+func reviewGroupIDs(group []Step) []string {
+	ids := make([]string, len(group))
+	for i, s := range group {
+		ids[i] = s.ID
+	}
+	return ids
+}
+
+// runReviewGate は連続する review ステップ群を「レビューゲート」として実行します。
+// いずれかの review で修正が発生した場合、全 review を最初からやり直します。
+// 全 review が修正なしで approve されたらゲートを通過します。
+func (e *Engine) runReviewGate(reviews []Step) error {
+	// グループ全体のリトライ上限（個別の max_retries の合計を上限とする）
+	totalMaxRetries := 0
+	for _, r := range reviews {
+		if r.MaxRetries > 0 {
+			totalMaxRetries += r.MaxRetries
+		} else {
+			totalMaxRetries += 1
+		}
+	}
+
+	preGateHash := ""
+	for gateAttempt := 0; gateAttempt < totalMaxRetries; gateAttempt++ {
+		e.Logger.Info("Review gate round",
+			"round", gateAttempt+1,
+			"max_rounds", totalMaxRetries,
+		)
+
+		// ゲート開始前の安全装置
+		if baseHash, err := fs.AutoCommit(fmt.Sprintf("pre-review-gate: round %d", gateAttempt+1)); err != nil {
+			e.Logger.Warn("Auto-commit failed (continuing)", "error", err)
+		} else if preGateHash == "" {
+			preGateHash = baseHash
+		}
+
+		fixApplied := false
+		allApproved := true
+
+		for _, reviewStep := range reviews {
+			approved, fixed, err := e.runSingleReview(reviewStep)
+			if err != nil {
+				return fmt.Errorf("review step %q failed: %w", reviewStep.ID, err)
+			}
+
+			if fixed {
+				fixApplied = true
+			}
+
+			if !approved {
+				// ユーザーが reject した → ロールバックして終了
+				if preGateHash != "" {
+					e.Logger.Error("Review gate rejected, rolling back")
+					fs.Rollback(preGateHash)
+				}
+				return fmt.Errorf("review gate rejected at step %q", reviewStep.ID)
+			}
+		}
+
+		if !fixApplied {
+			// 全 review が修正なしで approve → ゲート通過！
+			e.Logger.Info("✅ Review gate passed — all reviews approved without fixes")
+			return nil
+		}
+
+		// 修正が発生した → 全 review をやり直し
+		e.Logger.Warn("⚠️  Fix applied during review gate — restarting ALL reviews",
+			"round", gateAttempt+1,
+		)
+		_ = allApproved // 修正があっても個別 approve はされているのでここでは無視
+	}
+
+	// リトライ上限到達
+	if preGateHash != "" {
+		e.Logger.Error("Review gate exhausted, rolling back")
+		fs.Rollback(preGateHash)
+	}
+	return fmt.Errorf("review gate exhausted after %d rounds", totalMaxRetries)
 }
 
 // runLLMTask は llm_task タイプのステップを実行します。
@@ -186,13 +296,19 @@ func (e *Engine) runTestLoop(step Step) error {
 	return nil
 }
 
-// runFixer はテスト失敗時にエラーログを Fixer モデルに渡して修正を依頼します。
-func (e *Engine) runFixer(step Step, errOutput string) error {
-	if step.FixerModel == "" {
-		return fmt.Errorf("no fixer_model specified for loop step %q", step.ID)
+// runFixer はテスト失敗時またはレビュー指摘時に Fixer モデルに修正を依頼します。
+func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
+	fixerModel := step.FixerModel
+	if fixerModel == "" {
+		// review ループの場合は ReviewerModel をデフォルトとして使う
+		if step.Type == "review" {
+			fixerModel = step.ReviewerModel
+		} else {
+			return fmt.Errorf("no fixer_model specified for step %q", step.ID)
+		}
 	}
 
-	provider, err := llm.GetProvider(step.FixerModel)
+	provider, err := llm.GetProvider(fixerModel)
 	if err != nil {
 		return fmt.Errorf("failed to get fixer provider: %w", err)
 	}
@@ -205,11 +321,16 @@ func (e *Engine) runFixer(step Step, errOutput string) error {
 		}
 	}
 
-	// エラー出力を含むユーザープロンプトを構築
-	userPrompt := fmt.Sprintf("以下のテストが失敗しました。エラーを修正してください。\n\nコマンド: %s\n\nエラー出力:\n%s",
-		step.Command, errOutput)
+	// プロンプトの構築をコンテキスト（テスト失敗かレビューか）に合わせる
+	contextDesc := "以下のテストが失敗しました。エラーを修正してください。\n\nコマンド: " + step.Command
+	if step.Type == "review" {
+		contextDesc = "以下のレビュー指摘を受けました。コードを修正してください。"
+	}
 
-	e.Logger.Info("Running fixer", "model", step.FixerModel)
+	userPrompt := fmt.Sprintf("%s\n\n指摘内容・エラー出力:\n%s",
+		contextDesc, errorOrReviewOutput)
+
+	e.Logger.Info("Running fixer", "model", fixerModel)
 
 	result, err := provider.Generate(fixerPrompt, userPrompt)
 	if err != nil {
@@ -273,24 +394,30 @@ func (e *Engine) runGitBranch(step Step) error {
 	return nil
 }
 
-// runReviewTask は review タイプのステップを実行し、ユーザーの承認を求めます。
-func (e *Engine) runReviewTask(step Step) error {
+// runSingleReview は単一の review ステップを実行し、結果を返します。
+// 戻り値:
+//   - approved: ユーザーが approve したか
+//   - fixApplied: 修正が適用されたか（レビューゲートの再実行判定に使用）
+//   - err: エラー
+func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err error) {
+	e.Logger.Info("Running review", "id", step.ID, "reviewer", step.ReviewerModel)
+
 	provider, err := llm.GetProvider(step.ReviewerModel)
 	if err != nil {
-		return fmt.Errorf("failed to get reviewer: %w", err)
+		return false, false, fmt.Errorf("failed to get reviewer: %w", err)
 	}
 
 	reviewPrompt := ""
 	if step.ReviewPromptFile != "" {
 		reviewPrompt, err = fs.ReadFile(step.ReviewPromptFile)
 		if err != nil {
-			return fmt.Errorf("failed to read review prompt: %w", err)
+			return false, false, fmt.Errorf("failed to read review prompt: %w", err)
 		}
 	}
 
 	targetContent, err := fs.ReadFile(step.TargetFile)
 	if err != nil {
-		return fmt.Errorf("failed to read target file for review: %w", err)
+		return false, false, fmt.Errorf("failed to read target file for review: %w", err)
 	}
 
 	userPrompt := fmt.Sprintf("以下のファイルをレビューしてください:\n\nファイル: %s\n\n内容:\n%s",
@@ -299,42 +426,53 @@ func (e *Engine) runReviewTask(step Step) error {
 	e.Logger.Info("Running reviewer", "model", step.ReviewerModel)
 	result, err := provider.Generate(reviewPrompt, userPrompt)
 	if err != nil {
-		return fmt.Errorf("review generation failed: %w", err)
+		return false, false, fmt.Errorf("review generation failed: %w", err)
 	}
 
 	// レビュー結果を表示
 	fmt.Println("\n================================================================================")
-	fmt.Println("🔍 コードレビュー結果")
+	fmt.Printf("🔍 %s レビュー結果\n", step.ID)
 	fmt.Println("================================================================================")
 	fmt.Println(result)
 	fmt.Println("================================================================================")
 
 	// 履歴を保存
-	reviewLogDir := "docs/reviews"
-	reviewLogPath := fmt.Sprintf("%s/review-%s.md", reviewLogDir, step.ID)
+	reviewLogPath := fmt.Sprintf("docs/reviews/review-%s.md", step.ID)
 	if err := fs.WriteFile(reviewLogPath, result); err != nil {
 		e.Logger.Warn("Failed to save review log", "error", err)
-	} else {
-		e.Logger.Info("Review log saved", "file", reviewLogPath)
 	}
 
-	// 承認を求める
+	// ユーザーに承認を求める
 	for {
-		fmt.Print("\nこの内容で Approve しますか？ [a]pprove / [r]equest changes / [q]uit: ")
+		fmt.Print("\nこの内容で Approve しますか？ [a]pprove / [f]ix & approve / [r]eject / [q]uit: ")
+
 		var input string
 		fmt.Scanln(&input)
 		input = strings.ToLower(strings.TrimSpace(input))
 
 		switch input {
 		case "a", "approve":
-			e.Logger.Info("Review approved by user")
-			return nil
-		case "r", "request changes":
-			return fmt.Errorf("review rejected by user (Request Changes)")
+			e.Logger.Info("Review approved (no fix needed)", "id", step.ID)
+			return true, false, nil
+
+		case "f", "fix":
+			// 修正を適用してから approve
+			e.Logger.Info("Applying fix based on review feedback", "id", step.ID)
+			if err := e.runFixer(step, result); err != nil {
+				return false, false, fmt.Errorf("fixer failed: %w", err)
+			}
+			e.Logger.Info("Fix applied and approved", "id", step.ID)
+			return true, true, nil // approved=true, fixApplied=true → ゲートが全レビュー再実行
+
+		case "r", "reject":
+			e.Logger.Warn("Review rejected by user", "id", step.ID)
+			return false, false, nil
+
 		case "q", "quit":
 			os.Exit(0)
+
 		default:
-			fmt.Println("無効な入力です。'a', 'r', または 'q' を入力してください。")
+			fmt.Println("無効な入力です。'a', 'f', 'r', または 'q' を入力してください。")
 		}
 	}
 }

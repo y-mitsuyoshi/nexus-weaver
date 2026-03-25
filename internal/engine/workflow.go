@@ -115,6 +115,10 @@ func validateWorkflow(wf *Workflow) error {
 			if step.TargetFile == "" {
 				return fmt.Errorf("step %q: target_file is required for review", step.ID)
 			}
+			// review でもリトライを可能にする（オプション）
+			if step.MaxRetries < 0 {
+				return fmt.Errorf("step %q: max_retries must be >= 0", step.ID)
+			}
 		case "git_push":
 			// remote is optional, defaults to origin
 		default:
