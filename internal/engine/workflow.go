@@ -29,7 +29,8 @@ type Step struct {
 	TargetFile      string `yaml:"target_file,omitempty"`
 
 	// git_branch 用フィールド
-	BranchName string `yaml:"branch_name,omitempty"`
+	BranchName     string `yaml:"branch_name,omitempty"`
+	BranchNameFile string `yaml:"branch_name_file,omitempty"`
 
 	// review 用フィールド
 	ReviewerModel    string `yaml:"reviewer_model,omitempty"`
@@ -104,8 +105,8 @@ func validateWorkflow(wf *Workflow) error {
 				return fmt.Errorf("step %q: command is required for command_task", step.ID)
 			}
 		case "git_branch":
-			if step.BranchName == "" {
-				return fmt.Errorf("step %q: branch_name is required for git_branch", step.ID)
+			if step.BranchName == "" && step.BranchNameFile == "" {
+				return fmt.Errorf("step %q: branch_name or branch_name_file is required for git_branch", step.ID)
 			}
 		case "review":
 			if step.ReviewerModel == "" {

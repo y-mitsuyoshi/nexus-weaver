@@ -1,14 +1,22 @@
 name: "Feature Development Pipeline"
 steps:
+  - id: "generate_branch_name"
+    type: "llm_task"
+    agent_role: "ReleaseEngineer"
+    model: "gemini-cli"
+    system_prompt_file: "./prompts/branch_namer.md"
+    input_file: "./inbox/idea.txt"
+    output_file: "./docs/branch_name.txt"
+
   - id: "branch_creation"
     type: "git_branch"
-    branch_name: "auto-fix"
+    branch_name_file: "./docs/branch_name.txt"
 
   - id: "prd_generation"
     type: "llm_task"
     agent_role: "ProductManager"
     model: "gemini-cli"
-    system_prompt_file: "./prompts/pm.txt"
+    system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
 
@@ -16,7 +24,7 @@ steps:
     type: "llm_task"
     agent_role: "Architect"
     model: "gemini-cli"
-    system_prompt_file: "./prompts/architect.txt"
+    system_prompt_file: "./prompts/architect.md"
     input_file: "./docs/prd.md"
     output_file: "./docs/architecture.md"
 
@@ -24,7 +32,7 @@ steps:
     type: "llm_task"
     agent_role: "Engineer"
     model: "local-qwen"
-    system_prompt_file: "./prompts/engineer.txt"
+    system_prompt_file: "./prompts/engineer.md"
     input_file: "./docs/architecture.md"
     output_file: "./cmd/nexus-weaver/main.go"
 
@@ -33,19 +41,19 @@ steps:
     max_retries: 3
     command: "go test ./..."
     fixer_model: "gemini-cli"
-    fixer_prompt_file: "./prompts/fixer.txt"
+    fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "code_review"
     type: "review"
     reviewer_model: "gemini-cli"
-    review_prompt_file: "./prompts/reviewer.txt"
+    review_prompt_file: "./prompts/reviewer.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "qa_review"
     type: "review"
     reviewer_model: "gemini-cli"
-    review_prompt_file: "./prompts/qa.txt"
+    review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "push_to_remote"

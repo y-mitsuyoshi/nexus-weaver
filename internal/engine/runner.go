@@ -247,14 +247,28 @@ func (e *Engine) runCommandTask(step Step) error {
 // runGitBranch は git_branch タイプのステップを実行します。
 func (e *Engine) runGitBranch(step Step) error {
 	branchName := step.BranchName
-	// "feature/" プレフィックスを強制（または推奨）
-	if !strings.HasPrefix(branchName, "feature/") && !strings.HasPrefix(branchName, "fix/") {
+	if branchName == "" && step.BranchNameFile != "" {
+		content, err := fs.ReadFile(step.BranchNameFile)
+		if err != nil {
+			return fmt.Errorf("failed to read branch name file %s: %w", step.BranchNameFile, err)
+		}
+		branchName = strings.TrimSpace(content)
+	}
+
+	if branchName == "" {
+		return fmt.Errorf("branch name is empty")
+	}
+
+	// プレフィックスの強制（既に含まれている場合は重複させない）
+	if !strings.HasPrefix(branchName, "feature/") &&
+		!strings.HasPrefix(branchName, "fix/") &&
+		!strings.HasPrefix(branchName, "improvement/") {
 		branchName = "feature/" + branchName
 	}
 
 	e.Logger.Info("Creating new branch", "name", branchName)
 	if err := fs.CreateBranch(branchName); err != nil {
-		return fmt.Errorf("failed to create branch: %w", err)
+		return fmt.Errorf("failed to create branch %q: %w", branchName, err)
 	}
 	return nil
 }
