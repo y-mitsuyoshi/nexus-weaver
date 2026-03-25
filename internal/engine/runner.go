@@ -162,7 +162,9 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 				// ユーザーが reject した → ロールバックして終了
 				if preGateHash != "" {
 					e.Logger.Error("Review gate rejected, rolling back")
-					fs.Rollback(preGateHash)
+					if rbErr := fs.Rollback(preGateHash); rbErr != nil {
+						e.Logger.Error("Rollback failed", "error", rbErr)
+					}
 				}
 				return fmt.Errorf("review gate rejected at step %q", reviewStep.ID)
 			}
@@ -184,7 +186,9 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 	// リトライ上限到達
 	if preGateHash != "" {
 		e.Logger.Error("Review gate exhausted, rolling back")
-		fs.Rollback(preGateHash)
+		if rbErr := fs.Rollback(preGateHash); rbErr != nil {
+			e.Logger.Error("Rollback failed", "error", rbErr)
+		}
 	}
 	return fmt.Errorf("review gate exhausted after %d rounds", totalMaxRetries)
 }
@@ -465,7 +469,10 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 		fmt.Print("\nこの内容で Approve しますか？ [a]pprove / [f]ix & approve / [r]eject / [q]uit: ")
 
 		var input string
-		fmt.Scanln(&input)
+		if _, err := fmt.Scanln(&input); err != nil {
+			e.Logger.Warn("Failed to read input", "error", err)
+			continue
+		}
 		input = strings.ToLower(strings.TrimSpace(input))
 
 		switch input {

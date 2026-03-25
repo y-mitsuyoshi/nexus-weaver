@@ -9,16 +9,6 @@ import (
 	"testing"
 )
 
-// mockLLMProvider はテスト用のモック LLMProvider です。
-type mockLLMProvider struct {
-	Response string
-	Err      error
-}
-
-func (m *mockLLMProvider) Generate(systemPrompt, userPrompt string) (string, error) {
-	return m.Response, m.Err
-}
-
 func TestEngine_RunCommandTask(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
@@ -79,8 +69,12 @@ func TestEngine_RunLLMTask(t *testing.T) {
 	promptFile := filepath.Join(dir, "prompt.txt")
 	outputFile := filepath.Join(dir, "output.txt")
 
-	os.WriteFile(inputFile, []byte("test input"), 0644)
-	os.WriteFile(promptFile, []byte("test prompt"), 0644)
+	if err := os.WriteFile(inputFile, []byte("test input"), 0644); err != nil {
+		t.Fatalf("failed to write input file: %v", err)
+	}
+	if err := os.WriteFile(promptFile, []byte("test prompt"), 0644); err != nil {
+		t.Fatalf("failed to write prompt file: %v", err)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
