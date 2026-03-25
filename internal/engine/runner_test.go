@@ -95,6 +95,30 @@ func TestEngine_RunLLMTask(t *testing.T) {
 	}
 }
 
+func TestEngine_RunTestLoop_Failure(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	engine := NewEngine(logger)
+
+	wf := &Workflow{
+		Name: "Test",
+		Steps: []Step{
+			{
+				ID:          "loop-test",
+				Type:        "loop",
+				MaxRetries:  2,
+				Command:     "exit 1",
+				FixerModel:  "unknown-model",
+				TargetFile:  "non-existent.go",
+			},
+		},
+	}
+
+	err := engine.Run(wf)
+	if err == nil {
+		t.Fatal("expected error for loop with unknown fixer model, got nil")
+	}
+}
+
 func TestEngine_UnknownStepType(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)

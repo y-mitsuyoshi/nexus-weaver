@@ -26,6 +26,7 @@ type Step struct {
 	Command         string `yaml:"command,omitempty"`
 	FixerModel      string `yaml:"fixer_model,omitempty"`
 	FixerPromptFile string `yaml:"fixer_prompt_file,omitempty"`
+	TargetFile      string `yaml:"target_file,omitempty"`
 }
 
 // Workflow はYAMLで定義された一連の開発パイプラインを管理する構造体です。
@@ -84,6 +85,9 @@ func validateWorkflow(wf *Workflow) error {
 			}
 			if step.MaxRetries <= 0 {
 				return fmt.Errorf("step %q: max_retries must be > 0 for loop", step.ID)
+			}
+			if step.TargetFile == "" {
+				return fmt.Errorf("step %q: target_file is required for loop to apply fixes", step.ID)
 			}
 		case "command_task":
 			if step.Command == "" {

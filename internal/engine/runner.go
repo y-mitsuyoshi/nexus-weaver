@@ -101,9 +101,18 @@ func (e *Engine) runLLMTask(step Step) error {
 		return fmt.Errorf("LLM generation failed: %w", err)
 	}
 
-	// 結果をファイルに出力
 	if step.OutputFile != "" {
-		if err := fs.WriteFile(step.OutputFile, result); err != nil {
+		outputData := result
+		// Goなどのソースコードファイルの場合はコードブロックを抽出
+		if strings.HasSuffix(step.OutputFile, ".go") || strings.HasSuffix(step.OutputFile, ".yml") {
+			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+				outputData = extracted
+			} else if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
+				outputData = extracted
+			}
+		}
+
+		if err := fs.WriteFile(step.OutputFile, outputData); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
 		e.Logger.Info("Output written", "file", step.OutputFile)
@@ -136,8 +145,12 @@ func (e *Engine) runTestLoop(step Step) error {
 
 		e.Logger.Warn("Tests failed", "error", testErr, "attempt", i+1)
 
-		// 最後のリトライでも失敗した場合はループ終了
+		// 最後のリトライでも失敗した場合はロールバックしてループ終了
 		if i == step.MaxRetries-1 {
+			e.Logger.Error("Test loop failed, rolling back to pre-test state")
+			if rbErr := fs.Rollback(); rbErr != nil {
+				e.Logger.Error("Rollback failed", "error", rbErr)
+			}
 			return fmt.Errorf("test loop exhausted after %d retries: %w", step.MaxRetries, testErr)
 		}
 
@@ -181,8 +194,22 @@ func (e *Engine) runFixer(step Step, errOutput string) error {
 
 	e.Logger.Info("Fixer response received", "length", len(result))
 
-	// TODO: result からコードブロックを抽出して対象ファイルに適用する
-	// 現時点ではログ出力のみ。Phase 2 でファイル適用ロジックを実装予定。
+	// result からコードブロックを抽出して対象ファイルに適用する
+	fixCode := result
+	// 言語指定なし、または "go" 指定のブロックを探す
+	if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+		fixCode = extracted
+	} else if extracted, err := fs.ExtractCodeBlock(result, "go"); err == nil {
+		fixCode = extracted
+	} else {
+		e.Logger.Warn("No code block found in fixer response, using full response as fix")
+	}
+
+	if err := fs.WriteFile(step.TargetFile, fixCode); err != nil {
+		return fmt.Errorf("failed to apply fix to %s: %w", step.TargetFile, err)
+	}
+
+	e.Logger.Info("Fix applied successfully", "file", step.TargetFile)
 	return nil
 }
 
