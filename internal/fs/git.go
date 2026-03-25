@@ -6,6 +6,52 @@ import (
 	"strings"
 )
 
+// GetCurrentBranch は現在の Git ブランチ名を返します。
+func GetCurrentBranch() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w\noutput: %s", err, string(output))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// IsProtectedBranch は指定されたブランチ名が保護対象（main, master, develop）かどうかを判定します。
+func IsProtectedBranch(branch string) bool {
+	protected := []string{"main", "master", "develop"}
+	for _, p := range protected {
+		if branch == p {
+			return true
+		}
+	}
+	return false
+}
+
+// CreateBranch は新しいブランチを作成し、チェックアウトします。
+func CreateBranch(name string) error {
+	cmd := exec.Command("git", "checkout", "-b", name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create branch %s: %w\noutput: %s", name, err, string(output))
+	}
+	return nil
+}
+
+// Push は指定されたリモートに現在のブランチをプッシュします。
+func Push(remote string) error {
+	if remote == "" {
+		remote = "origin"
+	}
+	branch, err := GetCurrentBranch()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "push", remote, branch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to push to %s/%s: %w\noutput: %s", remote, branch, err, string(output))
+	}
+	return nil
+}
+
 // AutoCommit はステージされていない全変更を Git に自動コミットします。
 // 戻り値はコミット作成前の HEAD のコミットハッシュ（存在しなければ空文字列）です。
 // テスト実行前の安全装置として、ループ暴走時のロールバックに備えます。
