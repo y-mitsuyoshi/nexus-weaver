@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/y-mitsuyoshi/nexus-weaver/internal/engine"
 )
@@ -15,6 +17,15 @@ var (
 	commit  = "unknown"
 )
 
+// inputFiles は --input フラグで複数回指定可能なファイルパスリストです。
+type inputFiles []string
+
+func (i *inputFiles) String() string { return strings.Join(*i, ", ") }
+func (i *inputFiles) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
 func main() {
 	// CLI引数の定義
 	workflowPath := flag.String("workflow", "", "ワークフロー定義YAMLファイルのパス（省略時は自動探索）")
@@ -22,6 +33,9 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "ワークフローの読み込みと検証のみ実行（ステップは実行しない）")
 	showVersion := flag.Bool("version", false, "バージョン情報を表示して終了")
 	initProject := flag.Bool("init", false, "カレントディレクトリに .nexus/ 設定ディレクトリの雛形を生成")
+	prompt := flag.String("prompt", "", "ワークフローへの初期プロンプト（命令）。inbox/idea.txt に保存される")
+	var inputs inputFiles
+	flag.Var(&inputs, "input", "参照ファイルのパス（複数指定可）。プロンプトと結合されて inbox/idea.txt に保存される")
 	flag.Parse()
 
 	// バージョン表示
@@ -46,6 +60,20 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+
+	// 位置引数もプロンプトとして扱う（--prompt が未指定の場合）
+	if *prompt == "" && flag.NArg() > 0 {
+		combined := strings.Join(flag.Args(), " ")
+		prompt = &combined
+	}
+
+	// プロンプトが指定された場合、入力ファイルを生成
+	if *prompt != "" {
+		if err := saveInitialPrompt(logger, *prompt, inputs); err != nil {
+			logger.Error("Failed to save initial prompt", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// ワークフローパスの解決
@@ -129,6 +157,60 @@ func resolveWorkflowPath(explicit string) (string, error) {
 	}
 
 	return "", fmt.Errorf("ワークフローファイルが見つかりません。探索パス: %v", defaultWorkflowPaths)
+}
+
+// saveInitialPrompt は CLI 引数で渡されたプロンプトと参照ファイルの内容を
+// ワークフローの入力ファイル（inbox/idea.txt）に保存します。
+//
+// 生成されるファイルのフォーマット:
+//
+//	# タスク
+//	<プロンプトの内容>
+//
+//	# 参照ファイル（--input で指定された場合）
+//	## path/to/file.go
+//	```
+//	<ファイルの内容>
+//	```
+func saveInitialPrompt(logger *slog.Logger, prompt string, refs []string) error {
+	const defaultInputPath = "inbox/idea.txt"
+
+	// ディレクトリの作成
+	dir := filepath.Dir(defaultInputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("ディレクトリ %s の作成に失敗: %w", dir, err)
+	}
+
+	// プロンプトの構築
+	var sb strings.Builder
+	sb.WriteString("# タスク\n\n")
+	sb.WriteString(prompt)
+	sb.WriteString("\n")
+
+	// 参照ファイルの付加
+	if len(refs) > 0 {
+		sb.WriteString("\n# 参照ファイル\n")
+		for _, ref := range refs {
+			content, err := os.ReadFile(ref)
+			if err != nil {
+				return fmt.Errorf("参照ファイル %s の読み込みに失敗: %w", ref, err)
+			}
+			sb.WriteString(fmt.Sprintf("\n## %s\n\n```\n%s\n```\n", ref, strings.TrimRight(string(content), "\n")))
+			logger.Debug("Attached reference file", "path", ref, "size", len(content))
+		}
+	}
+
+	// 書き込み
+	if err := os.WriteFile(defaultInputPath, []byte(sb.String()), 0644); err != nil {
+		return fmt.Errorf("プロンプトの保存に失敗: %w", err)
+	}
+
+	logger.Info("Initial prompt saved",
+		"path", defaultInputPath,
+		"prompt_length", len(prompt),
+		"reference_files", len(refs),
+	)
+	return nil
 }
 
 // runInit はカレントディレクトリに .nexus/ 設定ディレクトリの雛形を生成します。

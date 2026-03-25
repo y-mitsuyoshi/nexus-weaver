@@ -23,6 +23,10 @@
 - テスト (ローカル実行): `make test-local`
 -
 -- ワークフロー実行例: `nexus-weaver --dry-run` または `docker compose run --rm nexus-weaver --dry-run`
+- 
+- **プロンプト指定の直接実行 (推奨)**
+-- クイックスタート: `nexus-weaver "命令文" --input file1.go`
+-- 指定された命令と参照ファイルの内容は自動的に `inbox/idea.txt` に集約・保存され、ワークフローが開始されます。
 
 ## Gemini 固有の注意事項
 

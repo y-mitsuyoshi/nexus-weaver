@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -180,5 +181,87 @@ func TestDefaultWorkflowPaths(t *testing.T) {
 		if path != expected[i] {
 			t.Errorf("defaultWorkflowPaths[%d]: 期待 %q, 結果 %q", i, expected[i], path)
 		}
+	}
+}
+
+// TestSaveInitialPrompt_PromptOnly はプロンプトのみの場合のテストです。
+func TestSaveInitialPrompt_PromptOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	}))
+
+	if err := saveInitialPrompt(logger, "ユーザー一覧APIを作って", nil); err != nil {
+		t.Fatalf("saveInitialPrompt() がエラーを返しました: %v", err)
+	}
+
+	content, err := os.ReadFile("inbox/idea.txt")
+	if err != nil {
+		t.Fatalf("inbox/idea.txt の読み込みに失敗: %v", err)
+	}
+
+	text := string(content)
+	if !strings.Contains(text, "# タスク") {
+		t.Error("ヘッダー '# タスク' が含まれていません")
+	}
+	if !strings.Contains(text, "ユーザー一覧APIを作って") {
+		t.Error("プロンプト内容が含まれていません")
+	}
+	if strings.Contains(text, "# 参照ファイル") {
+		t.Error("参照ファイルが無い場合にセクションが生成されるべきではない")
+	}
+}
+
+// TestSaveInitialPrompt_WithRefs はプロンプト+参照ファイルの場合のテストです。
+func TestSaveInitialPrompt_WithRefs(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
+	// 参照ファイルを作成
+	refPath := filepath.Join(tmpDir, "spec.md")
+	os.WriteFile(refPath, []byte("# API仕様\n\nGET /users"), 0644)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	}))
+
+	if err := saveInitialPrompt(logger, "この仕様に基づいて実装して", []string{refPath}); err != nil {
+		t.Fatalf("saveInitialPrompt() がエラーを返しました: %v", err)
+	}
+
+	content, err := os.ReadFile("inbox/idea.txt")
+	if err != nil {
+		t.Fatalf("inbox/idea.txt の読み込みに失敗: %v", err)
+	}
+
+	text := string(content)
+	if !strings.Contains(text, "# 参照ファイル") {
+		t.Error("参照ファイルセクションが含まれていません")
+	}
+	if !strings.Contains(text, "GET /users") {
+		t.Error("参照ファイルの内容が含まれていません")
+	}
+}
+
+// TestSaveInitialPrompt_RefNotFound は存在しない参照ファイルでエラーを返すテストです。
+func TestSaveInitialPrompt_RefNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(tmpDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	}))
+
+	err := saveInitialPrompt(logger, "テスト", []string{"/nonexistent/file.txt"})
+	if err == nil {
+		t.Error("存在しない参照ファイルでエラーが返されるべきです")
 	}
 }

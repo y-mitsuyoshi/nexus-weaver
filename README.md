@@ -97,30 +97,27 @@ Claude Code や Aider と同じ設計思想で、ツール自体のコードは�
 cd /path/to/your-project
 nexus-weaver --init
 ```
-
-これにより、以下のディレクトリ構成が自動生成されます：
-
-```text
-your-project/
-├── src/
-├── package.json
-├── .nexus/                  # nexus-weaver 用設定ディレクトリ
-│   ├── workflow.yml         # ワークフロー定義（雛形）
-│   └── prompts/             # プロンプトファイル配置場所
-└── ...
-```
-
-### 2. ワークフローを定義
-
-`.nexus/workflow.yml` を編集して、プロジェクト固有のパイプラインを定義します。
-
-### 3. 実行
+### 1. 対象リポジトリでプロジェクトを初期化
 
 ```bash
-nexus-weaver              # .nexus/workflow.yml を自動検出して実行
-nexus-weaver --dry-run    # 検証のみ
-nexus-weaver --verbose    # 詳細ログ付き
+cd /path/to/your-project
+nexus-weaver --init
 ```
+
+これにより、`.nexus/` ディレクトリとワークフローの雛形が作成されます。
+
+### 2. 命令を直接渡して実行（クイックスタート）
+
+```bash
+# プロンプトを直接指定（自動的に inbox/idea.txt に書き込まれる）
+nexus-weaver "ユーザー一覧取得APIを実装して"
+
+# 参照ファイル（--input）を添えて実行
+nexus-weaver "既存のコードをリファクタリングして" --input src/handler.go --input src/model.go
+```
+
+このコマンドを実行すると、入力されたメッセージと参照ファイルの内容が自動的にワークフローの入力ファイル（`inbox/idea.txt`）として保存され、パイプラインが開始されます。
+
 
 ### ワークフロー探索順序
 
@@ -181,6 +178,9 @@ nexus-weaver --workflow workflows/custom.yml
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `[PROMPT]` | | 余った引数は初期プロンプトとして `inbox/idea.txt` に保存される |
+| `--prompt` | | 初期プロンプトを明示的に指定する場合に使用 |
+| `--input` | | 参照ファイルのパス（複数指定可）。プロンプトと結合される |
 | `--workflow` | （自動探索） | ワークフロー定義 YAML のパス |
 | `--verbose` | `false` | 詳細ログを出力する |
 | `--dry-run` | `false` | 読み込みと検証のみ行い、実行はしない |
