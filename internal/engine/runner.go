@@ -125,15 +125,18 @@ func (e *Engine) runLLMTask(step Step) error {
 // テストコマンドを実行し、失敗した場合は Fixer モデルに修正を依頼するループ処理です。
 // 各リトライ前に Git 自動コミットを行い、暴走時のロールバックに備えます。
 func (e *Engine) runTestLoop(step Step) error {
+	preLoopHash := ""
 	for i := 0; i < step.MaxRetries; i++ {
 		e.Logger.Info("Test loop iteration",
 			"attempt", i+1,
 			"max", step.MaxRetries,
 		)
 
-		// 安全装置: テスト実行前に自動コミット
-		if err := fs.AutoCommit(fmt.Sprintf("pre-test: attempt %d/%d for %s", i+1, step.MaxRetries, step.ID)); err != nil {
+		// 安全装置: テスト実行前に自動コミット（コミット前の HEAD を返す）
+		if baseHash, err := fs.AutoCommit(fmt.Sprintf("pre-test: attempt %d/%d for %s", i+1, step.MaxRetries, step.ID)); err != nil {
 			e.Logger.Warn("Auto-commit failed (continuing)", "error", err)
+		} else if preLoopHash == "" {
+			preLoopHash = baseHash
 		}
 
 		// テストコマンド実行
@@ -148,8 +151,12 @@ func (e *Engine) runTestLoop(step Step) error {
 		// 最後のリトライでも失敗した場合はロールバックしてループ終了
 		if i == step.MaxRetries-1 {
 			e.Logger.Error("Test loop failed, rolling back to pre-test state")
-			if rbErr := fs.Rollback(); rbErr != nil {
-				e.Logger.Error("Rollback failed", "error", rbErr)
+			if preLoopHash == "" {
+				e.Logger.Warn("No pre-test commit recorded; skipping rollback")
+			} else {
+				if rbErr := fs.Rollback(preLoopHash); rbErr != nil {
+					e.Logger.Error("Rollback failed", "error", rbErr)
+				}
 			}
 			return fmt.Errorf("test loop exhausted after %d retries: %w", step.MaxRetries, testErr)
 		}

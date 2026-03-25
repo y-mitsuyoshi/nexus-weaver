@@ -43,9 +43,9 @@ nexus-weaver/
 
 - `gemini-cli` を使う場合: `gemini` コマンドが実行できること
 - `copilot-cli` を使う場合: `copilot` コマンドが実行できること
-- `local-qwen` を使う場合: OpenAI 互換 API が `http://localhost:11434/v1/chat/completions` で応答すること
+- `local-qwen` を使う場合: OpenAI 互換 API が稼働していること。エンドポイントは環境変数 `LOCAL_QWEN_ENDPOINT` で指定可能（デフォルト: `http://localhost:11434/v1/chat/completions`）。
 
-`local-qwen` は `internal/llm/provider.go` で上記エンドポイントに固定されています。
+`internal/llm/provider.go` はこの環境変数を参照してエンドポイントを決定します。
 
 ## セットアップ
 
