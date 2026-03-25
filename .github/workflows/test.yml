@@ -1,5 +1,8 @@
 name: Unit Tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ "main", "master" ]
@@ -20,6 +23,22 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
+
+      - name: Check formatting (gofmt)
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Files must be gofmt'd:";
+            gofmt -l .;
+            exit 1;
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.59.0
 
       - name: Run unit tests
         run: go test -v -count=1 ./...
