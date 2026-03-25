@@ -56,6 +56,12 @@ steps:
     review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
+  - id: "security_review"
+    type: "review"
+    reviewer_model: "gemini-cli"
+    review_prompt_file: "./prompts/security.md"
+    target_file: "./cmd/nexus-weaver/main.go"
+
   - id: "push_to_remote"
     type: "git_push"
     remote: "origin"
