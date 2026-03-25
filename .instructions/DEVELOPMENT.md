@@ -50,10 +50,11 @@ nexus-weaver/
 - **言語**: Go 1.24+
 - **依存**: `gopkg.in/yaml.v3` (YAML パーサー)
 - **アーキテクチャ**: クリーンアーキテクチャ。外部依存 (LLM, ファイルシステム, Git) は全て interface で抽象化
-- **テスト**: `docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...`
+- **テスト**: `make test` または `docker compose run --rm test`
 - **ログ**: `log/slog` による構造化ログ
+- **ビルド**: `make build`（バージョン情報付き）/ `make install`（グローバルインストール）
 - **コンテナ**: Docker (golang:1.24-alpine ベース、マルチステージビルド)
-- **実行**: `docker compose run --rm nexus-weaver` （Docker Compose 前提）
+- **実行**: `nexus-weaver`（ネイティブ）または `docker compose run --rm nexus-weaver`
 
 ## コーディング規約
 

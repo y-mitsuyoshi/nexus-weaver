@@ -40,7 +40,7 @@ nexus-weaver/
 
 ## 前提条件
 
-- **Docker** および **Docker Compose**
+- **Go 1.24+**（`go install` を使う場合）または **Docker** + **Docker Compose**
 - **Git**
 - 利用する LLM に応じた外部ツール（後述）
 
@@ -48,22 +48,90 @@ nexus-weaver/
 
 | モデル名 | 用途 | 必要なもの |
 |----------|------|-----------|
-| `gemini-cli` | 高推論タスク（PRD・設計・レビュー） | コンテナ内で `gemini` コマンドが実行可能であること |
-| `copilot-cli` | 汎用コーディング | コンテナ内で `copilot` コマンドが実行可能であること |
+| `gemini-cli` | 高推論タスク（PRD・設計・レビュー） | `gemini` コマンドが実行可能であること |
+| `copilot-cli` | 汎用コーディング | `copilot` コマンドが実行可能であること |
 | `local-qwen` | コスト・速度重視の実装タスク | OpenAI 互換 API（Ollama 等）が稼働していること |
 
 > `local-qwen` のエンドポイントは環境変数 `LOCAL_QWEN_ENDPOINT` で設定可能です（デフォルト: `http://localhost:11434/v1/chat/completions`）。
-> Docker 環境では `docker-compose.yml` の `network_mode: "host"` により、ホスト側の `localhost` に直接到達します（Linux のみ）。
 
-## セットアップ
+## インストール
 
-### 1. Docker イメージをビルド
+### 方法 1: `go install`（推奨）
+
+Go がインストールされている環境で、以下のコマンドでグローバルにインストールできます：
 
 ```bash
-docker compose build
+go install github.com/y-mitsuyoshi/nexus-weaver/cmd/nexus-weaver@latest
 ```
 
-### 2. 入力ファイルを準備
+これで `nexus-weaver` コマンドがどのディレクトリからでも利用可能になります。
+
+> **Note**: `$GOPATH/bin`（通常 `~/go/bin`）にパスが通っていることを確認してください。
+
+#### ソースからビルドする場合
+
+```bash
+git clone https://github.com/y-mitsuyoshi/nexus-weaver.git
+cd nexus-weaver
+make install  # バージョン情報付きでインストール
+```
+
+### 方法 2: Docker / Docker Compose（推奨）
+
+```bash
+git clone https://github.com/y-mitsuyoshi/nexus-weaver.git
+cd nexus-weaver
+make build    # docker compose build のエイリアス
+```
+
+これで環境が整います。開発中のテストやリントも、`make test` や `make lint` を叩くだけで Docker コンテナ内で実行されます。
+
+## 他のリポジトリで使う
+
+nexus-weaver は **任意のリポジトリのカレントディレクトリ** を起点にワークフローを実行します。
+Claude Code や Aider と同じ設計思想で、ツール自体のコードは対象プロジェクトに含めません。
+
+### 1. 対象リポジトリでプロジェクトを初期化
+
+```bash
+cd /path/to/your-project
+nexus-weaver --init
+```
+
+これにより、以下のディレクトリ構成が自動生成されます：
+
+```text
+your-project/
+├── src/
+├── package.json
+├── .nexus/                  # nexus-weaver 用設定ディレクトリ
+│   ├── workflow.yml         # ワークフロー定義（雛形）
+│   └── prompts/             # プロンプトファイル配置場所
+└── ...
+```
+
+### 2. ワークフローを定義
+
+`.nexus/workflow.yml` を編集して、プロジェクト固有のパイプラインを定義します。
+
+### 3. 実行
+
+```bash
+nexus-weaver              # .nexus/workflow.yml を自動検出して実行
+nexus-weaver --dry-run    # 検証のみ
+nexus-weaver --verbose    # 詳細ログ付き
+```
+
+### ワークフロー探索順序
+
+`--workflow` を省略した場合、以下の順序で自動探索します：
+
+1. `.nexus/workflow.yml`
+2. `.nexus/workflow.yaml`
+3. `workflows/workflow.yml`
+4. `workflows/workflow.yaml`
+
+## 入力ファイルを準備
 
 ワークフローが参照する入力ファイル（例: `inbox/idea.txt`）を配置します。
 
@@ -74,37 +142,50 @@ echo "実装したい機能のアイデアをここに記述" > inbox/idea.txt
 
 ## 使い方
 
-### ワークフローのバリデーション（ドライラン）
+### Docker Compose 経由（推奨）
 
 ```bash
+# ビルド（イメージの作成）
+make build
+
+# ワークフローのバリデーション（ドライラン）
 docker compose run --rm nexus-weaver --dry-run
-```
 
-### ワークフローの実行
-
-```bash
+# ワークフローの実行
 docker compose run --rm nexus-weaver
+
+# テストの実行（Docker コンテナ内）
+make test
+
+# リントの実行（Docker コンテナ内）
+make lint
 ```
 
-### 詳細ログの有効化
+### ネイティブ実行（go install 後）
 
 ```bash
-docker compose run --rm nexus-weaver --verbose
-```
+# ワークフローのバリデーション
+nexus-weaver --dry-run
 
-### カスタムワークフローの指定
+# ワークフローの実行
+nexus-weaver
 
-```bash
-docker compose run --rm nexus-weaver --workflow workflows/custom.yml
+# 詳細ログの有効化
+nexus-weaver --verbose
+
+# カスタムワークフローの指定
+nexus-weaver --workflow workflows/custom.yml
 ```
 
 ## CLI オプション
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--workflow` | `workflows/workflow.yml` | ワークフロー定義 YAML のパス |
+| `--workflow` | （自動探索） | ワークフロー定義 YAML のパス |
 | `--verbose` | `false` | 詳細ログを出力する |
 | `--dry-run` | `false` | 読み込みと検証のみ行い、実行はしない |
+| `--version` | | バージョン情報を表示して終了 |
+| `--init` | | カレントディレクトリに `.nexus/` 設定ディレクトリを生成 |
 
 ## ワークフローの書き方
 
@@ -257,7 +338,7 @@ services:
     command: ["--workflow", "workflows/workflow.yml"]
 ```
 
-- カレントディレクトリを `/app` にマウントし、ワークフローがファイルの読み書き・Git 操作を行える状態にします
+- カレクトディレクトリを `/app` にマウントし、ワークフローがファイルの読み書き・Git 操作を行える状態にします
 - `network_mode: "host"` により、ホスト上で動作する `local-qwen`（Ollama 等）に `localhost` で到達可能です（**Linux のみ**。macOS/Windows の Docker Desktop では `host.docker.internal` への変更が必要です）
 - コンテナ内で Git の `user.name` / `user.email` を自動設定済みのため、AutoCommit が正常に動作します
 
@@ -277,14 +358,39 @@ GitHub Actions で自動テスト・リントが実行されます（`.github/wo
 
 ## 開発
 
-開発者向けのローカルビルド・テスト手順です。
+開発のメインサイクル（ビルド、テスト、リント）は Docker Compose を通じて行います。
 
 ```bash
-# テスト実行
-docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
+# テスト実行（Docker）
+make test
 
-# Docker を使わない場合（Go 1.24 以上が必要）
-go test -v -count=1 ./...
+# リント実行（Docker）
+make lint
+
+# ビルド（Docker イメージ）
+make build
+
+# ホスト環境に Go 1.24+ がある場合に使用可能なローカルターゲット
+make test-local
+make lint-local
+make build-local
+
+# グローバルインストール（ローカルマシンの $GOPATH/bin へ）
+make install
+```
+
+### リリース
+
+Git タグを打ってから `go install` すると、バージョン情報が自動的に埋め込まれます：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+
+# 利用者側
+go install github.com/y-mitsuyoshi/nexus-weaver/cmd/nexus-weaver@v0.1.0
+nexus-weaver --version
+# nexus-weaver v0.1.0 (commit: abc1234)
 ```
 
 ## License
