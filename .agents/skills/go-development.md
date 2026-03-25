@@ -29,7 +29,7 @@ touch internal/llm/new_provider.go
 #    GetProvider テストを追加
 
 # 5. 全テスト実行で確認
-go test ./... -v
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
 ```
 
 ### ワークフローに新しいステップタイプを追加する場合
@@ -86,24 +86,23 @@ func TestSomething(t *testing.T) {
 
 ```bash
 # ビルド
-go build ./cmd/nexus-weaver
+docker compose build
 
 # 全テスト実行
-go test ./... -v
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
 
 # 特定パッケージのテスト
-go test ./internal/llm/ -v
+docker compose run --rm --entrypoint "" nexus-weaver go test ./internal/llm/ -v
 
 # カバレッジ付きテスト
-go test ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+docker compose run --rm --entrypoint "" nexus-weaver sh -c "go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out"
 
 # コードフォーマット
-gofmt -w .
+docker compose run --rm --entrypoint "" nexus-weaver gofmt -w .
 
 # 静的解析
-go vet ./...
+docker compose run --rm --entrypoint "" nexus-weaver go vet ./...
 
-# Docker ビルド & ドライラン
+# ドライラン
 docker compose run --rm nexus-weaver --dry-run
 ```

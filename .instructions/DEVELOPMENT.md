@@ -50,9 +50,10 @@ nexus-weaver/
 - **言語**: Go 1.24+
 - **依存**: `gopkg.in/yaml.v3` (YAML パーサー)
 - **アーキテクチャ**: クリーンアーキテクチャ。外部依存 (LLM, ファイルシステム, Git) は全て interface で抽象化
-- **テスト**: `go test ./... -v` で全パッケージのユニットテストを実行
+- **テスト**: `docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...`
 - **ログ**: `log/slog` による構造化ログ
 - **コンテナ**: Docker (golang:1.24-alpine ベース、マルチステージビルド)
+- **実行**: `docker compose run --rm nexus-weaver` （Docker Compose 前提）
 
 ## コーディング規約
 
@@ -80,6 +81,9 @@ type LLMProvider interface {
 |--------|------|
 | `llm_task` | LLM に生成を依頼し、結果をファイルに保存 |
 | `loop` | テストコマンド実行 → 失敗時に Fixer LLM で自動修正（リトライ付き） |
+| `review` | LLM によるコードレビューと対話的な承認・自動修正（レビューゲート） |
+| `git_branch` | 動的に生成したブランチ名で新規ブランチを作成 |
+| `git_push` | リモートリポジトリへプッシュ |
 | `command_task` | シェルコマンドの実行（PR 作成など） |
 
 ## 重要な設計判断

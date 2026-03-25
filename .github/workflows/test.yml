@@ -36,10 +36,9 @@ jobs:
         run: go vet ./...
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.59.0
-          args: --out-format=colored-line-number
+          version: v1.64.8
 
       - name: Run unit tests
         run: go test -v -count=1 ./...

@@ -9,27 +9,26 @@ description: "テスト実行と失敗時の自動修正のためのスキル"
 ### 1. 全テスト実行
 
 ```bash
-go test ./... -v -count=1
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
 ```
 
 ### 2. 特定パッケージのテスト
 
 ```bash
 # LLM プロバイダのテスト
-go test ./internal/llm/ -v
+docker compose run --rm --entrypoint "" nexus-weaver go test ./internal/llm/ -v
 
 # エンジン（ワークフロー + ランナー）のテスト
-go test ./internal/engine/ -v
+docker compose run --rm --entrypoint "" nexus-weaver go test ./internal/engine/ -v
 
 # ファイル I/O のテスト
-go test ./internal/fs/ -v
+docker compose run --rm --entrypoint "" nexus-weaver go test ./internal/fs/ -v
 ```
 
 ### 3. カバレッジ確認
 
 ```bash
-go test ./... -coverprofile=coverage.out
-go tool cover -func=coverage.out
+docker compose run --rm --entrypoint "" nexus-weaver sh -c "go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out"
 ```
 
 ## テスト失敗時の修正フロー
@@ -39,7 +38,7 @@ go tool cover -func=coverage.out
 ### Step 1: エラー出力を正確に読む
 
 ```bash
-go test ./... -v -count=1 2>&1
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./... 2>&1
 ```
 
 - `FAIL` の行でどのテスト関数が失敗したか確認
@@ -83,4 +82,8 @@ GitHub Actions (`.github/workflows/test.yml`) で自動実行されます:
 - Push 時: `main`, `master` ブランチ
 - Pull Request 時: `main`, `master` ブランチ向け
 
-CI で失敗した場合は、ローカルで同じ Go バージョン (1.24) でテストを再現してください。
+CI で失敗した場合は、Docker Compose で同じ Go バージョン (1.24) のテストを再現してください。
+
+```bash
+docker compose run --rm --entrypoint "" nexus-weaver go test -v -count=1 ./...
+```
