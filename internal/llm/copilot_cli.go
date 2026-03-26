@@ -9,7 +9,9 @@ import (
 
 // CopilotCLI は GitHub Copilot CLI (copilot コマンド) を利用するプロバイダです。
 // `copilot` コマンドを os/exec で実行し、標準出力を応答として返します。
-type CopilotCLI struct{}
+type CopilotCLI struct {
+	Model string
+}
 
 // Generate はシステムプロンプトとユーザープロンプトを結合して
 // GitHub Copilot CLI に渡し、応答テキストを返します。
@@ -25,9 +27,12 @@ func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 	combinedPrompt := formatPrompt(systemPrompt, userPrompt)
 
 	// copilot chat または直接プロンプトを渡せるサブコマンドを想定
-	// 現時点の GA 版に基づき、標準的な chat 実行コマンドを構成します
-	// (実際のエイリアスやパスは環境によりますが、指示に従い 'copilot' コマンドを使用)
-	cmd := exec.Command("copilot", "chat", combinedPrompt, "--no-interactive")
+	// モデル指定がある場合は --model フラグを付与する
+	args := []string{"chat", combinedPrompt, "--no-interactive"}
+	if c.Model != "" && c.Model != "copilot-cli" {
+		args = append(args, "--model", c.Model)
+	}
+	cmd := exec.Command("copilot", args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

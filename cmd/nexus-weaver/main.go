@@ -33,7 +33,13 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "ワークフローの読み込みと検証のみ実行（ステップは実行しない）")
 	showVersion := flag.Bool("version", false, "バージョン情報を表示して終了")
 	initProject := flag.Bool("init", false, "カレントディレクトリに .nexus/ 設定ディレクトリの雛形を生成")
-	prompt := flag.String("prompt", "", "ワークフローへの初期プロンプト（命令）。inbox/idea.txt に保存される")
+
+	// プロンプトとモデルの定義（エイリアス付き）
+	promptPtr := flag.String("prompt", "", "ワークフローへの初期プロンプト（命令）。inbox/idea.txt に保存される")
+	pAlias := flag.String("p", "", "alias for --prompt (one-shot mode)")
+	modelPtr := flag.String("model", "gemini-cli", "使用するLLMモデル名（デフォルト: gemini-cli）")
+	mAlias := flag.String("m", "", "alias for --model")
+
 	var inputs inputFiles
 	flag.Var(&inputs, "input", "参照ファイルのパス（複数指定可）。プロンプトと結合されて inbox/idea.txt に保存される")
 	flag.Parse()
@@ -49,9 +55,25 @@ func main() {
 	if *verbose {
 		logLevel = slog.LevelDebug
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	// ロガー出力は os.Stderr に向ける（stdout を結果表示用に空着けておく）
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
+
+	// プロンプトとモデルの解決
+	prompt := *promptPtr
+	if prompt == "" {
+		prompt = *pAlias
+	}
+	// 位置引数もプロンプトとして扱う（フラグが未指定の場合）
+	if prompt == "" && flag.NArg() > 0 {
+		prompt = strings.Join(flag.Args(), " ")
+	}
+
+	model := *modelPtr
+	if *mAlias != "" {
+		model = *mAlias
+	}
 
 	// プロジェクト初期化モード
 	if *initProject {
@@ -62,15 +84,9 @@ func main() {
 		return
 	}
 
-	// 位置引数もプロンプトとして扱う（--prompt が未指定の場合）
-	if *prompt == "" && flag.NArg() > 0 {
-		combined := strings.Join(flag.Args(), " ")
-		prompt = &combined
-	}
-
 	// プロンプトが指定された場合、入力ファイルを生成
-	if *prompt != "" {
-		if err := saveInitialPrompt(logger, *prompt, inputs); err != nil {
+	if prompt != "" {
+		if err := saveInitialPrompt(logger, prompt, inputs); err != nil {
 			logger.Error("Failed to save initial prompt", "error", err)
 			os.Exit(1)
 		}
@@ -79,8 +95,32 @@ func main() {
 	// ワークフローパスの解決
 	resolvedPath, err := resolveWorkflowPath(*workflowPath)
 	if err != nil {
+		// ワークフローが見つからないがプロンプトがある場合、ワンショット実行モードとして振る舞う
+		if prompt != "" {
+			logger.Info("No workflow file found. Entering one-shot execution mode", "model", model)
+			wf := &engine.Workflow{
+				Name: "One-shot Task",
+				Steps: []engine.Step{
+					{
+						ID:        "oneshot",
+						Type:      "llm_task",
+						Model:     model,
+						InputFile: "inbox/idea.txt",
+					},
+				},
+			}
+			eng := engine.NewEngine(logger)
+			if err := eng.Run(wf); err != nil {
+				logger.Error("One-shot execution failed", "error", err)
+				os.Exit(1)
+			}
+			logger.Info("One-shot mode completed")
+			return
+		}
+
 		logger.Error("Failed to find workflow file", "error", err)
 		fmt.Fprintln(os.Stderr, "\nヒント: 'nexus-weaver --init' で .nexus/ ディレクトリを作成するか、--workflow でパスを指定してください")
+		fmt.Fprintln(os.Stderr, "または 'nexus-weaver -p \"質問内容\"' でワンショット実行も可能です")
 		os.Exit(1)
 	}
 

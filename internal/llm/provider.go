@@ -16,8 +16,10 @@ func GetProvider(modelName string) (LLMProvider, error) {
 	switch modelName {
 	case "gemini-cli":
 		return &GeminiCLI{}, nil
-	case "copilot-cli":
-		return &CopilotCLI{}, nil
+	case "copilot-cli", "gpt-4", "gpt-4o", "gpt-5":
+		return &CopilotCLI{
+			Model: modelName,
+		}, nil
 	case "local-qwen":
 		endpoint := os.Getenv("LOCAL_QWEN_ENDPOINT")
 		if endpoint == "" {

@@ -18,12 +18,30 @@ func TestGetProvider_GeminiCLI(t *testing.T) {
 }
 
 func TestGetProvider_CopilotCLI(t *testing.T) {
-	provider, err := GetProvider("copilot-cli")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	testCases := []struct {
+		name      string
+		modelName string
+	}{
+		{"Standard", "copilot-cli"},
+		{"GPT-4", "gpt-4"},
+		{"GPT-4o", "gpt-4o"},
+		{"GPT-5", "gpt-5"},
 	}
-	if _, ok := provider.(*CopilotCLI); !ok {
-		t.Errorf("expected *CopilotCLI, got %T", provider)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, err := GetProvider(tc.modelName)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", tc.modelName, err)
+			}
+			c, ok := provider.(*CopilotCLI)
+			if !ok {
+				t.Errorf("expected *CopilotCLI, got %T", provider)
+			}
+			if c.Model != tc.modelName {
+				t.Errorf("expected model %s, got %s", tc.modelName, c.Model)
+			}
+		})
 	}
 }
 
