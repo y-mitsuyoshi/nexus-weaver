@@ -56,20 +56,29 @@ nexus-weaver/
 
 ### プロバイダとモデルの分離指定
 
-ワークフロー YAML では、プロバイダとモデルを **個別フィールド** で指定できます：
+ワークフロー YAML では、全ステップタイプ共通で `provider` と `model` の2フィールドで LLM を指定します：
 
 ```yaml
-# プロバイダとモデルを個別に指定
-provider: "gemini-cli"
-model: "gemini-2.5-flash"
+# llm_task: テキスト生成に使用する LLM
+- id: "prd_generation"
+  type: "llm_task"
+  provider: "gemini-cli"
+  model: "gemini-2.5-flash"
 
-# モデル省略時はプロバイダのデフォルトモデルを使用
-provider: "gemini-cli"
+# review: レビュー & 修正に使用する LLM（同一LLMで両方実行）
+- id: "code_review"
+  type: "review"
+  provider: "gemini-cli"
 
-# "default" もデフォルトモデルと同義
-provider: "gemini-cli"
-model: "default"
+# loop: テスト失敗時の Fixer LLM
+- id: "test_loop"
+  type: "loop"
+  provider: "copilot-cli"
+  model: "claude-sonnet-4"
 ```
+
+- `model` 省略時はプロバイダのデフォルトモデル、`"default"` も同義
+- `provider` か `model` のいずれかは必須（`model` のみの場合は後方互換としてプロバイダ名を直接指定可）
 
 CLI の `--model` フラグでは `provider:model` 形式も利用可能です（後方互換）：
 
@@ -240,11 +249,10 @@ steps:
   # 4. PRD をレビュー（修正→再レビューのゲート）
   - id: "prd_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/prd_reviewer.md"
     target_file: "./docs/prd.md"
     max_retries: 3
-    fixer_provider: "gemini-cli"
     fixer_prompt_file: "./prompts/document_fixer.md"
 
   # 5. リモートにプッシュ
@@ -286,8 +294,8 @@ LLM にテキスト生成を依頼し、結果を `output_file` に保存しま�
 | `command` | o | 実行するテストコマンド |
 | `max_retries` | o | 最大リトライ回数（> 0） |
 | `target_file` | o | 修正対象のファイル |
-| `fixer_provider` | | 修正に使用するプロバイダ |
-| `fixer_model` | | 修正に使用するモデル |
+| `provider` | | Fixer に使用するプロバイダ |
+| `model` | | Fixer に使用するモデル |
 | `fixer_prompt_file` | | Fixer 用システムプロンプト |
 
 - 各リトライ前に AutoCommit で安全装置を確保
@@ -302,16 +310,14 @@ LLM にテキスト生成を依頼し、結果を `output_file` に保存しま�
 |-----------|:----:|------|
 | `id` | o | ステップの一意な識別子 |
 | `type` | o | `review` |
-| `reviewer_provider` | △ | レビューを行うプロバイダ |
-| `reviewer_model` | △ | レビューを行うモデル |
+| `provider` | △ | レビュー & 修正に使用するプロバイダ |
+| `model` | △ | レビュー & 修正に使用するモデル |
 | `target_file` | o | レビュー対象のファイル |
 | `review_prompt_file` | | レビュアー用システムプロンプト |
 | `max_retries` | | レビューゲートの最大ラウンド数 |
-| `fixer_provider` | | 修正に使用するプロバイダ（省略時は `reviewer_provider`） |
-| `fixer_model` | | 修正に使用するモデル（省略時は `reviewer_model`） |
 | `fixer_prompt_file` | | Fixer 用システムプロンプト |
 
-> `reviewer_provider` か `reviewer_model` のいずれかは必須です。
+> `provider` か `model` のいずれかは必須です。レビューと修正（Fix）で同じ LLM を使用します。
 
 - ユーザーに `[a]pprove / [f]ix & approve / [r]eject / [q]uit` の選択肢を提示
 - `f` で Fixer に修正を依頼し `target_file` に適用
