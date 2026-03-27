@@ -199,7 +199,8 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 // 3. LLM に Generate を依頼
 // 4. 結果を出力ファイルに書き込み
 func (e *Engine) runLLMTask(step Step) error {
-	provider, err := llm.GetProvider(step.Model)
+	modelSpec := ResolveModelSpec(step.Provider, step.Model)
+	provider, err := llm.GetProvider(modelSpec)
 	if err != nil {
 		return fmt.Errorf("failed to get provider: %w", err)
 	}
@@ -223,7 +224,7 @@ func (e *Engine) runLLMTask(step Step) error {
 	}
 
 	e.Logger.Info("Generating with LLM",
-		"model", step.Model,
+		"model", modelSpec,
 		"role", step.AgentRole,
 	)
 
@@ -313,18 +314,14 @@ func (e *Engine) runTestLoop(step Step) error {
 }
 
 // runFixer はテスト失敗時またはレビュー指摘時に Fixer モデルに修正を依頼します。
+// ステップの provider/model をそのまま使用します。
 func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
-	fixerModel := step.FixerModel
-	if fixerModel == "" {
-		// review ループの場合は ReviewerModel をデフォルトとして使う
-		if step.Type == "review" {
-			fixerModel = step.ReviewerModel
-		} else {
-			return fmt.Errorf("no fixer_model specified for step %q", step.ID)
-		}
+	modelSpec := ResolveModelSpec(step.Provider, step.Model)
+	if modelSpec == "" {
+		return fmt.Errorf("no provider/model specified for step %q", step.ID)
 	}
 
-	provider, err := llm.GetProvider(fixerModel)
+	provider, err := llm.GetProvider(modelSpec)
 	if err != nil {
 		return fmt.Errorf("failed to get fixer provider: %w", err)
 	}
@@ -346,7 +343,7 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 	userPrompt := fmt.Sprintf("%s\n\n指摘内容・エラー出力:\n%s",
 		contextDesc, errorOrReviewOutput)
 
-	e.Logger.Info("Running fixer", "model", fixerModel)
+	e.Logger.Info("Running fixer", "model", modelSpec)
 
 	result, err := provider.Generate(fixerPrompt, userPrompt)
 	if err != nil {
@@ -422,9 +419,10 @@ func (e *Engine) runGitBranch(step Step) error {
 //   - fixApplied: 修正が適用されたか（レビューゲートの再実行判定に使用）
 //   - err: エラー
 func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err error) {
-	e.Logger.Info("Running review", "id", step.ID, "reviewer", step.ReviewerModel)
+	modelSpec := ResolveModelSpec(step.Provider, step.Model)
+	e.Logger.Info("Running review", "id", step.ID, "reviewer", modelSpec)
 
-	provider, err := llm.GetProvider(step.ReviewerModel)
+	provider, err := llm.GetProvider(modelSpec)
 	if err != nil {
 		return false, false, fmt.Errorf("failed to get reviewer: %w", err)
 	}
@@ -445,7 +443,7 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 	userPrompt := fmt.Sprintf("以下のファイルをレビューしてください:\n\nファイル: %s\n\n内容:\n%s",
 		step.TargetFile, targetContent)
 
-	e.Logger.Info("Running reviewer", "model", step.ReviewerModel)
+	e.Logger.Info("Running reviewer", "model", modelSpec)
 	result, err := provider.Generate(reviewPrompt, userPrompt)
 	if err != nil {
 		return false, false, fmt.Errorf("review generation failed: %w", err)

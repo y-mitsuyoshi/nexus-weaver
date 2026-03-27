@@ -24,7 +24,7 @@ steps:
     type: "loop"
     max_retries: 3
     command: "go test ./..."
-    fixer_model: "gemini-cli"
+    provider: "gemini-cli"
     fixer_prompt_file: "./prompts/fixer.txt"
     target_file: "./src/main.go"
   - id: "step4"
@@ -137,4 +137,69 @@ func writeTempYAML(t *testing.T, content string) string {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 	return path
+}
+
+func TestResolveModelSpec(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		model    string
+		want     string
+	}{
+		{"ProviderOnly", "gemini-cli", "", "gemini-cli"},
+		{"ProviderAndModel", "gemini-cli", "gemini-2.5-flash", "gemini-cli:gemini-2.5-flash"},
+		{"ProviderWithDefault", "gemini-cli", "default", "gemini-cli"},
+		{"CopilotWithModel", "copilot-cli", "claude-opus-4", "copilot-cli:claude-opus-4"},
+		{"ModelOnly_BackwardCompat", "", "gemini-cli", "gemini-cli"},
+		{"ModelOnly_WithColon", "", "gemini-cli:gemini-2.5-flash", "gemini-cli:gemini-2.5-flash"},
+		{"BothEmpty", "", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveModelSpec(tc.provider, tc.model)
+			if got != tc.want {
+				t.Errorf("ResolveModelSpec(%q, %q) = %q, want %q", tc.provider, tc.model, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadWorkflow_UnifiedProviderModel(t *testing.T) {
+	yamlContent := `
+name: "Unified Test"
+steps:
+  - id: "llm"
+    type: "llm_task"
+    provider: "gemini-cli"
+    model: "gemini-2.5-flash"
+    input_file: "./inbox/idea.txt"
+  - id: "review"
+    type: "review"
+    provider: "copilot-cli"
+    model: "claude-opus-4"
+    target_file: "./docs/prd.md"
+  - id: "loop"
+    type: "loop"
+    command: "go test ./..."
+    max_retries: 3
+    provider: "gemini-cli"
+    target_file: "./cmd/main.go"
+`
+	tmpFile := writeTempYAML(t, yamlContent)
+
+	wf, err := LoadWorkflow(tmpFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 全ステップが provider/model を共通フィールドとして持つこと
+	if wf.Steps[0].Provider != "gemini-cli" || wf.Steps[0].Model != "gemini-2.5-flash" {
+		t.Errorf("llm step: got provider=%q model=%q", wf.Steps[0].Provider, wf.Steps[0].Model)
+	}
+	if wf.Steps[1].Provider != "copilot-cli" || wf.Steps[1].Model != "claude-opus-4" {
+		t.Errorf("review step: got provider=%q model=%q", wf.Steps[1].Provider, wf.Steps[1].Model)
+	}
+	if wf.Steps[2].Provider != "gemini-cli" {
+		t.Errorf("loop step: got provider=%q", wf.Steps[2].Provider)
+	}
 }

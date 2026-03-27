@@ -7,11 +7,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/y-mitsuyoshi/nexus-weaver/internal/fs"
 )
+
+// cleanupBranch はテスト終了時にテスト用ブランチを削除します。
+// テスト開始時のブランチを記録し、テスト後にそこへ戻ってから削除します。
+func cleanupBranch(t *testing.T, branchName string) {
+	t.Helper()
+	originalBranch, _ := fs.GetCurrentBranch()
+	t.Cleanup(func() {
+		current, _ := fs.GetCurrentBranch()
+		if current == branchName {
+			_ = fs.SwitchBranch(originalBranch)
+		}
+		_ = fs.DeleteBranch(branchName)
+	})
+}
 
 func TestEngine_RunCommandTask(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
+
+	branchName := fmt.Sprintf("fix/command-task-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
 
 	wf := &Workflow{
 		Name: "Test",
@@ -19,7 +38,7 @@ func TestEngine_RunCommandTask(t *testing.T) {
 			{
 				ID:         "branch-setup",
 				Type:       "git_branch",
-				BranchName: fmt.Sprintf("test-cmd-%d", os.Getpid()),
+				BranchName: branchName,
 			},
 			{
 				ID:      "echo-test",
@@ -38,13 +57,16 @@ func TestEngine_RunCommandTask_Failure(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
 
+	branchName := fmt.Sprintf("fix/command-fail-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
+
 	wf := &Workflow{
 		Name: "Test",
 		Steps: []Step{
 			{
 				ID:         "branch-setup",
 				Type:       "git_branch",
-				BranchName: fmt.Sprintf("test-cmd-fail-%d", os.Getpid()),
+				BranchName: branchName,
 			},
 			{
 				ID:      "fail-test",
@@ -79,20 +101,23 @@ func TestEngine_RunLLMTask(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
 
+	branchName := fmt.Sprintf("feature/llm-task-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
+
 	// Note: このテストは実際のLLMプロバイダを使うため、
-	// 未知のモデル名を使ってエラーハンドリングを検証します。
+	// 未知のプロバイダを使ってエラーハンドリングを検証します。
 	wf := &Workflow{
 		Name: "Test",
 		Steps: []Step{
 			{
 				ID:         "branch-setup",
 				Type:       "git_branch",
-				BranchName: fmt.Sprintf("test-llm-%d", os.Getpid()),
+				BranchName: branchName,
 			},
 			{
 				ID:               "llm-test",
 				Type:             "llm_task",
-				Model:            "unknown-model",
+				Provider:         "unknown-provider",
 				SystemPromptFile: promptFile,
 				InputFile:        inputFile,
 				OutputFile:       outputFile,
@@ -110,20 +135,23 @@ func TestEngine_RunTestLoop_Failure(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
 
+	branchName := fmt.Sprintf("fix/loop-fail-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
+
 	wf := &Workflow{
 		Name: "Test",
 		Steps: []Step{
 			{
 				ID:         "branch-setup",
 				Type:       "git_branch",
-				BranchName: fmt.Sprintf("test-loop-fail-%d", os.Getpid()),
+				BranchName: branchName,
 			},
 			{
 				ID:         "loop-test",
 				Type:       "loop",
 				MaxRetries: 2,
 				Command:    "exit 1",
-				FixerModel: "unknown-model",
+				Provider:   "unknown-provider",
 				TargetFile: "non-existent.go",
 			},
 		},
@@ -144,7 +172,8 @@ func TestEngine_RunGitBranch(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	engine := NewEngine(logger)
 
-	branchName := fmt.Sprintf("test-branch-%d", os.Getpid())
+	branchName := fmt.Sprintf("feature/git-branch-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
 	wf := &Workflow{
 		Name: "Test",
 		Steps: []Step{

@@ -31,11 +31,10 @@ steps:
 
   - id: "prd_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/prd_reviewer.md"
     target_file: "./docs/prd.md"
     max_retries: 3
-    fixer_provider: "gemini-cli"
     fixer_prompt_file: "./prompts/document_fixer.md"
 
   - id: "architecture_design"
@@ -48,11 +47,10 @@ steps:
 
   - id: "architecture_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/architecture_reviewer.md"
     target_file: "./docs/architecture.md"
     max_retries: 3
-    fixer_provider: "gemini-cli"
     fixer_prompt_file: "./prompts/document_fixer.md"
 
   - id: "test_generation"
@@ -80,27 +78,27 @@ steps:
     type: "loop"
     max_retries: 3
     command: "go test ./..."
-    fixer_provider: "gemini-cli"
+    provider: "gemini-cli"
     fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "code_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/reviewer.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
 
   - id: "qa_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
 
   - id: "security_review"
     type: "review"
-    reviewer_provider: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: "./prompts/security.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3

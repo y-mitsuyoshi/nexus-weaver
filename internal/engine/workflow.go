@@ -8,36 +8,52 @@ import (
 )
 
 // Step はワークフロー内の個々の実行ステップを定義します。
-// ステップのタイプ（llm_task / loop / command_task / git_branch / review / git_push）に応じて異なるフィールドが使用されます。
+// 全ステップタイプ共通で provider / model フィールドで LLM を指定します。
+// - llm_task: テキスト生成に使用する LLM
+// - review: レビュー & 修正に使用する LLM
+// - loop: テスト失敗時の Fixer LLM
 type Step struct {
 	// 共通フィールド
 	ID   string `yaml:"id"`
 	Type string `yaml:"type"` // "llm_task", "loop", "command_task", "git_branch", "review", "git_push"
 
-	// llm_task 用フィールド
-	AgentRole        string `yaml:"agent_role,omitempty"`
-	Model            string `yaml:"model,omitempty"`
+	// LLM 指定（全 LLM ステップ共通）
+	AgentRole string `yaml:"agent_role,omitempty"`
+	Provider  string `yaml:"provider,omitempty"`
+	Model     string `yaml:"model,omitempty"`
+
+	// llm_task 用
 	SystemPromptFile string `yaml:"system_prompt_file,omitempty"`
 	InputFile        string `yaml:"input_file,omitempty"`
 	OutputFile       string `yaml:"output_file,omitempty"`
 
-	// loop 用フィールド
+	// loop / review 用
 	MaxRetries      int    `yaml:"max_retries,omitempty"`
 	Command         string `yaml:"command,omitempty"`
-	FixerModel      string `yaml:"fixer_model,omitempty"`
 	FixerPromptFile string `yaml:"fixer_prompt_file,omitempty"`
 	TargetFile      string `yaml:"target_file,omitempty"`
 
-	// git_branch 用フィールド
+	// review 用
+	ReviewPromptFile string `yaml:"review_prompt_file,omitempty"`
+
+	// git_branch 用
 	BranchName     string `yaml:"branch_name,omitempty"`
 	BranchNameFile string `yaml:"branch_name_file,omitempty"`
 
-	// review 用フィールド
-	ReviewerModel    string `yaml:"reviewer_model,omitempty"`
-	ReviewPromptFile string `yaml:"review_prompt_file,omitempty"`
-
-	// git_push 用フィールド
+	// git_push 用
 	Remote string `yaml:"remote,omitempty"`
+}
+
+// ResolveModelSpec はプロバイダーとモデルの個別指定を "provider:model" 形式の
+// モデル指定文字列に変換します。provider.go の GetProvider() に渡す前に使用します。
+func ResolveModelSpec(provider, model string) string {
+	if provider != "" {
+		if model != "" && model != "default" {
+			return provider + ":" + model
+		}
+		return provider
+	}
+	return model
 }
 
 // Workflow はYAMLで定義された一連の開発パイプラインを管理する構造体です。
@@ -87,8 +103,8 @@ func validateWorkflow(wf *Workflow) error {
 
 		switch step.Type {
 		case "llm_task":
-			if step.Model == "" {
-				return fmt.Errorf("step %q: model is required for llm_task", step.ID)
+			if step.Provider == "" && step.Model == "" {
+				return fmt.Errorf("step %q: provider or model is required for llm_task", step.ID)
 			}
 		case "loop":
 			if step.Command == "" {
@@ -109,8 +125,8 @@ func validateWorkflow(wf *Workflow) error {
 				return fmt.Errorf("step %q: branch_name or branch_name_file is required for git_branch", step.ID)
 			}
 		case "review":
-			if step.ReviewerModel == "" {
-				return fmt.Errorf("step %q: reviewer_model is required for review", step.ID)
+			if step.Provider == "" && step.Model == "" {
+				return fmt.Errorf("step %q: provider or model is required for review", step.ID)
 			}
 			if step.TargetFile == "" {
 				return fmt.Errorf("step %q: target_file is required for review", step.ID)

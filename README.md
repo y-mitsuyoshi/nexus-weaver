@@ -46,13 +46,37 @@ nexus-weaver/
 
 ### 利用可能な LLM プロバイダ
 
-| モデル名 | 用途 | 必要なもの |
-|----------|------|-----------|
+| プロバイダ名 | 用途 | 必要なもの |
+|-------------|------|-----------|
 | `gemini-cli` | 高推論タスク（PRD・設計・レビュー） | `gemini` コマンドが実行可能であること |
 | `copilot-cli` | 汎用コーディング | `copilot` コマンドが実行可能であること |
 | `local-qwen` | コスト・速度重視の実装タスク | OpenAI 互換 API（Ollama 等）が稼働していること |
 
 > `local-qwen` のエンドポイントは環境変数 `LOCAL_QWEN_ENDPOINT` で設定可能です（デフォルト: `http://localhost:11434/v1/chat/completions`）。
+
+### プロバイダとモデルの分離指定
+
+ワークフロー YAML では、プロバイダとモデルを **個別フィールド** で指定できます：
+
+```yaml
+# プロバイダとモデルを個別に指定
+provider: "gemini-cli"
+model: "gemini-2.5-flash"
+
+# モデル省略時はプロバイダのデフォルトモデルを使用
+provider: "gemini-cli"
+
+# "default" もデフォルトモデルと同義
+provider: "gemini-cli"
+model: "default"
+```
+
+CLI の `--model` フラグでは `provider:model` 形式も利用可能です（後方互換）：
+
+```bash
+nexus-weaver -p "質問" --model "gemini-cli:gemini-2.5-flash"
+nexus-weaver -p "質問" --model "copilot-cli:claude-opus-4"
+```
 
 ## インストール
 
@@ -91,12 +115,6 @@ make build    # docker compose build のエイリアス
 nexus-weaver は **任意のリポジトリのカレントディレクトリ** を起点にワークフローを実行します。
 Claude Code や Aider と同じ設計思想で、ツール自体のコードは対象プロジェクトに含めません。
 
-### 1. 対象リポジトリでプロジェクトを初期化
-
-```bash
-cd /path/to/your-project
-nexus-weaver --init
-```
 ### 1. 対象リポジトリでプロジェクトを初期化
 
 ```bash
@@ -179,7 +197,8 @@ nexus-weaver --workflow workflows/custom.yml
 | Flag | Default | Description |
 |------|---------|-------------|
 | `[PROMPT]` | | 余った引数は初期プロンプトとして `inbox/idea.txt` に保存される |
-| `--prompt` | | 初期プロンプトを明示的に指定する場合に使用 |
+| `--prompt`, `-p` | | 初期プロンプトを明示的に指定する場合に使用 |
+| `--model`, `-m` | `gemini-cli` | 使用するLLMプロバイダ名またはモデル指定（`provider:model` 形式も可） |
 | `--input` | | 参照ファイルのパス（複数指定可）。プロンプトと結合される |
 | `--workflow` | （自動探索） | ワークフロー定義 YAML のパス |
 | `--verbose` | `false` | 詳細ログを出力する |
@@ -198,12 +217,13 @@ steps:
   - id: "generate_branch_name"
     type: "llm_task"
     agent_role: "ReleaseEngineer"
-    model: "gemini-cli"
+    provider: "gemini-cli"
+    model: "gemini-2.0-flash"
     system_prompt_file: "./prompts/branch_namer.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/branch_name.txt"
 
-  # 2. ブランチを作成
+  # 2. ブランチを作成（GitHub Flow: feature ブランチで開発）
   - id: "branch_creation"
     type: "git_branch"
     branch_name_file: "./docs/branch_name.txt"
@@ -212,7 +232,7 @@ steps:
   - id: "prd_generation"
     type: "llm_task"
     agent_role: "ProductManager"
-    model: "gemini-cli"
+    provider: "gemini-cli"
     system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
@@ -220,11 +240,11 @@ steps:
   # 4. PRD をレビュー（修正→再レビューのゲート）
   - id: "prd_review"
     type: "review"
-    reviewer_model: "gemini-cli"
+    reviewer_provider: "gemini-cli"
     review_prompt_file: "./prompts/prd_reviewer.md"
     target_file: "./docs/prd.md"
     max_retries: 3
-    fixer_model: "gemini-cli"
+    fixer_provider: "gemini-cli"
     fixer_prompt_file: "./prompts/document_fixer.md"
 
   # 5. リモートにプッシュ
@@ -246,11 +266,14 @@ LLM にテキスト生成を依頼し、結果を `output_file` に保存しま�
 |-----------|:----:|------|
 | `id` | o | ステップの一意な識別子 |
 | `type` | o | `llm_task` |
-| `model` | o | `gemini-cli` / `copilot-cli` / `local-qwen` |
+| `provider` | △ | LLM プロバイダ名（`gemini-cli` / `copilot-cli` / `local-qwen`） |
+| `model` | △ | 使用モデル名（省略時はプロバイダのデフォルト） |
 | `agent_role` | | ログ出力用の役割名 |
 | `system_prompt_file` | | システムプロンプトのファイルパス |
 | `input_file` | | 入力ファイルのパス |
 | `output_file` | | 出力先ファイルのパス |
+
+> `provider` か `model` のいずれかは必須です。`model` のみ指定の場合は後方互換として `"gemini-cli"` のようにプロバイダ名を直接指定できます。
 
 ### `loop`
 
@@ -263,6 +286,7 @@ LLM にテキスト生成を依頼し、結果を `output_file` に保存しま�
 | `command` | o | 実行するテストコマンド |
 | `max_retries` | o | 最大リトライ回数（> 0） |
 | `target_file` | o | 修正対象のファイル |
+| `fixer_provider` | | 修正に使用するプロバイダ |
 | `fixer_model` | | 修正に使用するモデル |
 | `fixer_prompt_file` | | Fixer 用システムプロンプト |
 
@@ -278,12 +302,16 @@ LLM にテキスト生成を依頼し、結果を `output_file` に保存しま�
 |-----------|:----:|------|
 | `id` | o | ステップの一意な識別子 |
 | `type` | o | `review` |
-| `reviewer_model` | o | レビューを行うモデル |
+| `reviewer_provider` | △ | レビューを行うプロバイダ |
+| `reviewer_model` | △ | レビューを行うモデル |
 | `target_file` | o | レビュー対象のファイル |
 | `review_prompt_file` | | レビュアー用システムプロンプト |
 | `max_retries` | | レビューゲートの最大ラウンド数 |
+| `fixer_provider` | | 修正に使用するプロバイダ（省略時は `reviewer_provider`） |
 | `fixer_model` | | 修正に使用するモデル（省略時は `reviewer_model`） |
 | `fixer_prompt_file` | | Fixer 用システムプロンプト |
+
+> `reviewer_provider` か `reviewer_model` のいずれかは必須です。
 
 - ユーザーに `[a]pprove / [f]ix & approve / [r]eject / [q]uit` の選択肢を提示
 - `f` で Fixer に修正を依頼し `target_file` に適用
@@ -355,6 +383,31 @@ GitHub Actions で自動テスト・リントが実行されます（`.github/wo
 
 - `gofmt` / `go vet` / `golangci-lint` による静的解析
 - `go test -v -count=1 ./...` によるユニットテスト
+
+## 開発フロー（GitHub Flow）
+
+nexus-weaver のワークフローは **GitHub Flow** のパターンに沿って動作します：
+
+1. **`main` ブランチは常にデプロイ可能** — 保護ブランチ（`main`, `master`, `develop`）での直接実行を防止する機構が組み込まれています
+2. **feature ブランチで作業** — `git_branch` ステップで自動的に `feature/`, `fix/`, `improvement/` プレフィックス付きのブランチを作成
+3. **変更をコミット & プッシュ** — `git_push` ステップでリモートにプッシュ、PR 作成用の `command_task` も利用可能
+4. **レビュー → マージ** — `review` ステップで LLM レビュー + ユーザー承認のゲートを実現
+
+```text
+main ─────────────────────────────────────────────►
+       \                                   /
+        feature/add-user-api ────────────►
+         │  PRD生成 → レビュー → 実装 → テスト → レビュー → Push → PR
+```
+
+### 安全機構
+
+| 機構 | 説明 |
+|------|------|
+| 保護ブランチ検出 | `main`/`master`/`develop` ではワークフロー起動時にエラー（先頭が `git_branch` でない場合） |
+| AutoCommit | `loop`/`review` の各リトライ前に自動コミット。暴走時のロールバック基点を確保 |
+| 自動ロールバック | `loop` のリトライ上限到達時・`review` のリジェクト時に Git ロールバック |
+| ブランチプレフィックス強制 | ブランチ名に所定のプレフィックスがない場合、`feature/` を自動付与 |
 
 ## 開発
 
