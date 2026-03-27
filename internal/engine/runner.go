@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/y-mitsuyoshi/nexus-weaver/internal/fs"
@@ -213,8 +214,9 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 // runLLMTask は llm_task タイプのステップを実行します。
 // 1. 指定モデルのプロバイダを取得
 // 2. システムプロンプトと入力ファイルを読み込み
-// 3. LLM に Generate を依頼
-// 4. 結果を出力ファイルに書き込み
+// 3. コード生成時は既存プロジェクト構造を自動注入
+// 4. LLM に Generate を依頼
+// 5. 結果を出力ファイルに書き込み
 func (e *Engine) runLLMTask(step Step) error {
 	modelSpec := ResolveModelSpec(step.Provider, step.Model)
 	provider, err := llm.GetProvider(modelSpec)
@@ -237,6 +239,18 @@ func (e *Engine) runLLMTask(step Step) error {
 		inputData, err = fs.ReadFile(step.InputFile)
 		if err != nil {
 			return fmt.Errorf("failed to read input file: %w", err)
+		}
+	}
+
+	// コード生成時は既存プロジェクト構造をコンテキストとして自動注入
+	if isCodeFile(step.OutputFile) {
+		ctx := collectCodebaseContext()
+		inputData += ctx
+		e.Logger.Debug("Auto-injected codebase context", "output_file", step.OutputFile)
+
+		// 出力先ファイルが既に存在する場合はその内容も追加
+		if existing, readErr := fs.ReadFile(step.OutputFile); readErr == nil {
+			inputData += fmt.Sprintf("\n\n## 現在の %s の内容（互換性を維持してください）\n```\n%s\n```\n", step.OutputFile, existing)
 		}
 	}
 
@@ -351,6 +365,14 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 		}
 	}
 
+	// 修正対象ファイルの現在の内容を読み込む
+	currentContent := ""
+	if step.TargetFile != "" {
+		if content, readErr := fs.ReadFile(step.TargetFile); readErr == nil {
+			currentContent = content
+		}
+	}
+
 	// プロンプトの構築をコンテキスト（テスト失敗かレビューか）に合わせる
 	contextDesc := "以下のテストが失敗しました。エラーを修正してください。\n\nコマンド: " + step.Command
 	if step.Type == "review" {
@@ -359,6 +381,16 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 
 	userPrompt := fmt.Sprintf("%s\n\n指摘内容・エラー出力:\n%s",
 		contextDesc, errorOrReviewOutput)
+
+	// 修正対象ファイルの現在の内容を含める
+	if currentContent != "" {
+		userPrompt += fmt.Sprintf("\n\n修正対象ファイル (%s) の現在の内容:\n```\n%s\n```", step.TargetFile, currentContent)
+	}
+
+	// コードファイルの場合はプロジェクト構造も注入
+	if isCodeFile(step.TargetFile) {
+		userPrompt += collectCodebaseContext()
+	}
 
 	e.Logger.Info("Running fixer", "model", modelSpec)
 
@@ -585,4 +617,55 @@ func (e *Engine) resolveStepPaths(step *Step) {
 	step.ReviewPromptFile = e.resolveVars(step.ReviewPromptFile)
 	step.BranchNameFile = e.resolveVars(step.BranchNameFile)
 	step.Command = e.resolveVars(step.Command)
+}
+
+// codeExtensions はコード生成時に自動コンテキスト注入の対象となる拡張子です。
+var codeExtensions = []string{".go", ".py", ".ts", ".js", ".rs", ".java"}
+
+// isCodeFile はファイルパスがコードファイルかどうかを判定します。
+func isCodeFile(path string) bool {
+	for _, ext := range codeExtensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// collectCodebaseContext はプロジェクトの既存コード構造を収集し、
+// LLM に渡すコンテキスト文字列を返します。
+// これにより LLM が存在しないパッケージをインポートする幻覚を防止します。
+func collectCodebaseContext() string {
+	var sb strings.Builder
+	sb.WriteString("\n\n---\n# 既存プロジェクト構造（自動収集・変更不可）\n")
+	sb.WriteString("以下のパッケージとファイルが実際に存在します。存在しないパッケージをインポートしないでください。\n\n")
+
+	// go.mod の内容（モジュールパスと依存関係）
+	if data, err := os.ReadFile("go.mod"); err == nil {
+		sb.WriteString("## go.mod\n```\n")
+		sb.WriteString(string(data))
+		sb.WriteString("```\n\n")
+	}
+
+	// Go ファイルの一覧（テストファイルは除外）
+	sb.WriteString("## Go ソースファイル一覧\n```\n")
+	_ = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			base := filepath.Base(path)
+			if base == "vendor" || base == ".git" || (path != "." && strings.HasPrefix(base, ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			sb.WriteString(path + "\n")
+		}
+		return nil
+	})
+	sb.WriteString("```\n")
+
+	return sb.String()
 }

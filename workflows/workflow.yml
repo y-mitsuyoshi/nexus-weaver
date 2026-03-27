@@ -68,8 +68,13 @@ steps:
     output_file: "./cmd/nexus-weaver/main.go"
 
   - id: "format_and_vet"
-    type: "command_task"
+    type: "loop"
+    max_retries: 3
     command: "go fmt ./... && go vet ./..."
+    provider: "copilot-cli"
+    model: "gpt-5-mini"
+    fixer_prompt_file: "./prompts/fixer.md"
+    target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "test_and_fix_loop"
     type: "loop"
@@ -87,6 +92,7 @@ steps:
     review_prompt_file: "./prompts/reviewer.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
+    fixer_prompt_file: "./prompts/fixer.md"
 
   - id: "qa_review"
     type: "review"
@@ -95,6 +101,7 @@ steps:
     review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
+    fixer_prompt_file: "./prompts/fixer.md"
 
   - id: "security_review"
     type: "review"
@@ -103,6 +110,7 @@ steps:
     review_prompt_file: "./prompts/security.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
+    fixer_prompt_file: "./prompts/fixer.md"
 
   # --- 単純タスク: 軽量モデルで十分 ---
   - id: "pr_title_generation"

@@ -147,6 +147,7 @@ func main() {
 		logger.Info(fmt.Sprintf("  Step %d", i+1),
 			"id", step.ID,
 			"type", step.Type,
+			"provider", step.Provider,
 			"model", step.Model,
 		)
 	}
