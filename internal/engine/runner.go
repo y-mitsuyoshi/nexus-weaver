@@ -36,8 +36,15 @@ func (e *Engine) Run(wf *Workflow) error {
 	if err != nil {
 		e.Logger.Warn("Could not determine current git branch", "error", err)
 	} else if fs.IsProtectedBranch(currentBranch) {
-		// 保護ブランチの場合、ワークフローの最初のステップが git_branch でない限り実行を拒否
-		if len(wf.Steps) > 0 && wf.Steps[0].Type != "git_branch" {
+		// 保護ブランチの場合、ワークフロー内に git_branch ステップが含まれていない限り実行を拒否
+		hasGitBranch := false
+		for _, s := range wf.Steps {
+			if s.Type == "git_branch" {
+				hasGitBranch = true
+				break
+			}
+		}
+		if !hasGitBranch {
 			return fmt.Errorf("direct execution on protected branch %q is not allowed. Please use 'git_branch' step or switch to a feature branch", currentBranch)
 		}
 	}
