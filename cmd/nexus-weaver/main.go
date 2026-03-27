@@ -279,7 +279,7 @@ steps:
   - id: "prd_generation"
     type: "llm_task"
     agent_role: "ProductManager"
-    model: "gemini-cli"
+    provider: "gemini-cli"
     system_prompt_file: ".nexus/prompts/pm.md"
     input_file: "inbox/idea.txt"
     output_file: "docs/prd.md"
@@ -288,7 +288,7 @@ steps:
   - id: "implementation"
     type: "llm_task"
     agent_role: "Engineer"
-    model: "gemini-cli"
+    provider: "gemini-cli"
     system_prompt_file: ".nexus/prompts/engineer.md"
     input_file: "docs/prd.md"
     output_file: "src/main.go"
@@ -298,14 +298,14 @@ steps:
     type: "loop"
     max_retries: 3
     command: "go test ./..."
-    fixer_model: "gemini-cli"
+    provider: "gemini-cli"
     fixer_prompt_file: ".nexus/prompts/fixer.md"
     target_file: "src/main.go"
 
   # 5. コードレビュー
   - id: "code_review"
     type: "review"
-    reviewer_model: "gemini-cli"
+    provider: "gemini-cli"
     review_prompt_file: ".nexus/prompts/reviewer.md"
     target_file: "src/main.go"
     max_retries: 3

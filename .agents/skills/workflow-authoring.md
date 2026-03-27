@@ -28,7 +28,7 @@ steps:
   output_file: "./docs/prd.md"       # 出力先ファイルパス
 ```
 
-**必須フィールド**: `id`, `type`, `model`
+**必須フィールド**: `id`, `type`, `provider` または `model`
 
 ### `loop` — テスト実行 & 自動修正ループ
 
@@ -37,7 +37,7 @@ steps:
   type: "loop"
   max_retries: 3                     # 最大リトライ回数 (>0)
   command: "go test ./..."           # テストコマンド
-  fixer_model: "gemini-cli"          # エラー修正に使用するモデル
+  provider: "gemini-cli"             # Fixer に使用するプロバイダ
   fixer_prompt_file: "./prompts/fixer.txt"  # Fixer のプロンプト
 ```
 
@@ -48,15 +48,14 @@ steps:
 ```yaml
 - id: "code_review"
   type: "review"
-  reviewer_model: "gemini-cli"            # レビューを行うモデル
+  provider: "gemini-cli"                    # レビュー & 修正に使用するプロバイダ
   review_prompt_file: "./prompts/reviewer.md"  # レビュアー用プロンプト
   target_file: "./cmd/nexus-weaver/main.go"    # レビュー対象ファイル
   max_retries: 3                          # レビューゲートの最大ラウンド数
-  fixer_model: "gemini-cli"               # 修正時に使用するモデル
   fixer_prompt_file: "./prompts/fixer.md"  # Fixer 用プロンプト
 ```
 
-**必須フィールド**: `id`, `type`, `reviewer_model`, `target_file`
+**必須フィールド**: `id`, `type`, `provider` または `model`, `target_file`
 
 ### `git_branch` — 新規ブランチ作成
 
@@ -97,9 +96,9 @@ steps:
 2. `steps` は1つ以上必要
 3. 各ステップの `id` は一意であること（重複不可）
 4. `type` は `llm_task`, `loop`, `review`, `git_branch`, `git_push`, `command_task` のいずれか
-5. `llm_task` には `model` が必須
+5. `llm_task` には `provider` または `model` が必須
 6. `loop` には `command`, `max_retries` (>0), `target_file` が必須
-7. `review` には `reviewer_model`, `target_file` が必須
+7. `review` には `provider` または `model`, `target_file` が必須
 8. `git_branch` には `branch_name` または `branch_name_file` が必須
 9. `command_task` には `command` が必須
 
