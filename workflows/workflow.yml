@@ -1,16 +1,16 @@
 name: "Feature Development Pipeline"
-# provider: LLMプロバイダー ("gemini-cli", "copilot-cli", "local-qwen")
-# model:    使用モデル (省略時はデフォルト、"default" も同義)
-# 例: provider: "gemini-cli" / model: "gemini-2.5-flash"
-#     provider: "copilot-cli" / model: "claude-opus-4"
-#     provider: "local-qwen"  / model: "qwen3-30b-a3b"
+# provider: LLMプロバイダー ("gemini-cli", "copilot-cli")
+# model:    使用モデル (省略時はプロバイダのデフォルト)
+# 利用可能モデル:
+#   gemini-cli:  gemini-3-flash-preview (高推論), gemini-2.5-flash (軽量)
+#   copilot-cli: gpt-5-mini, gpt-5, claude-sonnet-4, claude-sonnet-4.5
 steps:
   # --- 単純タスク: 軽量モデルで十分 ---
   - id: "generate_branch_name"
     type: "llm_task"
     agent_role: "ReleaseEngineer"
     provider: "gemini-cli"
-    model: "gemini-2.0-flash"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/branch_namer.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/branch_name.txt"
@@ -24,7 +24,7 @@ steps:
     type: "llm_task"
     agent_role: "ProductManager"
     provider: "gemini-cli"
-    model: "default"
+    model: "gemini-3-flash-preview"
     system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
@@ -32,6 +32,7 @@ steps:
   - id: "prd_review"
     type: "review"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     review_prompt_file: "./prompts/prd_reviewer.md"
     target_file: "./docs/prd.md"
     max_retries: 3
@@ -41,6 +42,7 @@ steps:
     type: "llm_task"
     agent_role: "Architect"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     system_prompt_file: "./prompts/architect.md"
     input_file: "./docs/prd.md"
     output_file: "./docs/architecture.md"
@@ -48,6 +50,7 @@ steps:
   - id: "architecture_review"
     type: "review"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     review_prompt_file: "./prompts/architecture_reviewer.md"
     target_file: "./docs/architecture.md"
     max_retries: 3
@@ -57,6 +60,7 @@ steps:
     type: "llm_task"
     agent_role: "TestEngineer"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     system_prompt_file: "./prompts/test_engineer.md"
     input_file: "./docs/architecture.md"
     output_file: "./cmd/nexus-weaver/main_test.go"
@@ -65,7 +69,7 @@ steps:
     type: "llm_task"
     agent_role: "Engineer"
     provider: "copilot-cli"
-    model: "claude-sonnet-4"
+    model: "gpt-5-mini"
     system_prompt_file: "./prompts/engineer.md"
     input_file: "./docs/architecture.md"
     output_file: "./cmd/nexus-weaver/main.go"
@@ -79,12 +83,14 @@ steps:
     max_retries: 3
     command: "go test ./..."
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "code_review"
     type: "review"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     review_prompt_file: "./prompts/reviewer.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
@@ -92,6 +98,7 @@ steps:
   - id: "qa_review"
     type: "review"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
@@ -99,6 +106,7 @@ steps:
   - id: "security_review"
     type: "review"
     provider: "gemini-cli"
+    model: "gemini-3-flash-preview"
     review_prompt_file: "./prompts/security.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
@@ -108,7 +116,7 @@ steps:
     type: "llm_task"
     agent_role: "TechLead"
     provider: "gemini-cli"
-    model: "gemini-2.0-flash"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pr_title.md"
     input_file: "./docs/prd.md"
     output_file: "./docs/pr_title.txt"
@@ -117,7 +125,7 @@ steps:
     type: "llm_task"
     agent_role: "TechLead"
     provider: "gemini-cli"
-    model: "gemini-2.0-flash"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pr_body.md"
     input_file: "./docs/prd.md"
     output_file: "./docs/pr_body.md"
