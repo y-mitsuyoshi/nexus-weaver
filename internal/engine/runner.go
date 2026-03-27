@@ -15,6 +15,9 @@ import (
 // Engine はワークフローの各ステップを順番に実行するステートマシンです。
 type Engine struct {
 	Logger *slog.Logger
+	// Vars はワークフロー実行中に動的に設定されるテンプレート変数です。
+	// ステップのファイルパスや command 内の {{key}} が実行時に置換されます。
+	Vars map[string]string
 }
 
 // NewEngine は構造化ログ付きの新しい Engine インスタンスを返します。
@@ -22,7 +25,7 @@ func NewEngine(logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Engine{Logger: logger}
+	return &Engine{Logger: logger, Vars: make(map[string]string)}
 }
 
 // Run はワークフローの全ステップを順番に実行します。
@@ -52,10 +55,17 @@ func (e *Engine) Run(wf *Workflow) error {
 	i := 0
 	for i < len(wf.Steps) {
 		step := wf.Steps[i]
+		// テンプレート変数を解決
+		e.resolveStepPaths(&step)
+		wf.Steps[i] = step
 
 		// 連続する review ステップをレビューゲートとしてグループ化
 		if step.Type == "review" {
 			reviewGroup := e.collectReviewGroup(wf.Steps, i)
+			// レビューグループ内の各ステップも変数解決
+			for j := range reviewGroup {
+				e.resolveStepPaths(&reviewGroup[j])
+			}
 			e.Logger.Info("Review gate detected",
 				"start_index", i+1,
 				"count", len(reviewGroup),
@@ -417,6 +427,10 @@ func (e *Engine) runGitBranch(step Step) error {
 	if err := fs.CreateBranch(branchName); err != nil {
 		return fmt.Errorf("failed to create branch %q: %w", branchName, err)
 	}
+
+	// ブランチ名をテンプレート変数に登録（{{branch_name}} で参照可能）
+	e.Vars["branch_name"] = branchName
+
 	return nil
 }
 
@@ -463,8 +477,12 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 	fmt.Println(result)
 	fmt.Println("================================================================================")
 
-	// 履歴を保存
-	reviewLogPath := fmt.Sprintf("docs/reviews/review-%s.md", step.ID)
+	// 履歴を保存（ブランチ名があればサブディレクトリに整理）
+	reviewDir := "docs/reviews"
+	if bn, ok := e.Vars["branch_name"]; ok && bn != "" {
+		reviewDir = fmt.Sprintf("docs/%s/reviews", bn)
+	}
+	reviewLogPath := fmt.Sprintf("%s/review-%s.md", reviewDir, step.ID)
 	if err := fs.WriteFile(reviewLogPath, result); err != nil {
 		e.Logger.Warn("Failed to save review log", "error", err)
 	}
@@ -540,4 +558,24 @@ func runShellCommand(command string) error {
 		return err
 	}
 	return nil
+}
+
+// resolveVars はテンプレート変数 {{key}} をエンジンの Vars マップで置換します。
+func (e *Engine) resolveVars(s string) string {
+	for k, v := range e.Vars {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", v)
+	}
+	return s
+}
+
+// resolveStepPaths はステップ内のファイルパス・コマンドのテンプレート変数を解決します。
+func (e *Engine) resolveStepPaths(step *Step) {
+	step.InputFile = e.resolveVars(step.InputFile)
+	step.OutputFile = e.resolveVars(step.OutputFile)
+	step.TargetFile = e.resolveVars(step.TargetFile)
+	step.SystemPromptFile = e.resolveVars(step.SystemPromptFile)
+	step.FixerPromptFile = e.resolveVars(step.FixerPromptFile)
+	step.ReviewPromptFile = e.resolveVars(step.ReviewPromptFile)
+	step.BranchNameFile = e.resolveVars(step.BranchNameFile)
+	step.Command = e.resolveVars(step.Command)
 }

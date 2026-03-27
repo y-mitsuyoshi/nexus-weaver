@@ -4,6 +4,8 @@ name: "Feature Development Pipeline"
 # 利用可能モデル:
 #   gemini-cli:  gemini-2.5-flash
 #   copilot-cli: gpt-5-mini, gpt-5, claude-sonnet-4, claude-sonnet-4.5
+# テンプレート変数:
+#   {{branch_name}} — git_branch ステップで作成されたブランチ名に展開
 steps:
   # --- 単純タスク: 軽量モデルで十分 ---
   - id: "generate_branch_name"
@@ -27,14 +29,14 @@ steps:
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
-    output_file: "./docs/prd.md"
+    output_file: "./docs/{{branch_name}}/prd.md"
 
   - id: "prd_review"
     type: "review"
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/prd_reviewer.md"
-    target_file: "./docs/prd.md"
+    target_file: "./docs/{{branch_name}}/prd.md"
     max_retries: 3
     fixer_prompt_file: "./prompts/document_fixer.md"
 
@@ -44,15 +46,15 @@ steps:
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/architect.md"
-    input_file: "./docs/prd.md"
-    output_file: "./docs/architecture.md"
+    input_file: "./docs/{{branch_name}}/prd.md"
+    output_file: "./docs/{{branch_name}}/architecture.md"
 
   - id: "architecture_review"
     type: "review"
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/architecture_reviewer.md"
-    target_file: "./docs/architecture.md"
+    target_file: "./docs/{{branch_name}}/architecture.md"
     max_retries: 3
     fixer_prompt_file: "./prompts/document_fixer.md"
 
@@ -62,7 +64,7 @@ steps:
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/test_engineer.md"
-    input_file: "./docs/architecture.md"
+    input_file: "./docs/{{branch_name}}/architecture.md"
     output_file: "./cmd/nexus-weaver/main_test.go"
 
   - id: "implementation"
@@ -71,7 +73,7 @@ steps:
     provider: "copilot-cli"
     model: "gpt-5-mini"
     system_prompt_file: "./prompts/engineer.md"
-    input_file: "./docs/architecture.md"
+    input_file: "./docs/{{branch_name}}/architecture.md"
     output_file: "./cmd/nexus-weaver/main.go"
 
   - id: "format_and_vet"
@@ -118,8 +120,8 @@ steps:
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pr_title.md"
-    input_file: "./docs/prd.md"
-    output_file: "./docs/pr_title.txt"
+    input_file: "./docs/{{branch_name}}/prd.md"
+    output_file: "./docs/{{branch_name}}/pr_title.txt"
 
   - id: "pr_body_generation"
     type: "llm_task"
@@ -127,8 +129,8 @@ steps:
     provider: "gemini-cli"
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pr_body.md"
-    input_file: "./docs/prd.md"
-    output_file: "./docs/pr_body.md"
+    input_file: "./docs/{{branch_name}}/prd.md"
+    output_file: "./docs/{{branch_name}}/pr_body.md"
 
   - id: "push_to_remote"
     type: "git_push"
@@ -136,4 +138,4 @@ steps:
 
   - id: "create_pr"
     type: "command_task"
-    command: "gh pr create --title \"$(cat ./docs/pr_title.txt)\" --body-file ./docs/pr_body.md"
+    command: "gh pr create --title \"$(cat ./docs/{{branch_name}}/pr_title.txt)\" --body-file ./docs/{{branch_name}}/pr_body.md"
