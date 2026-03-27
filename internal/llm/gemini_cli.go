@@ -9,10 +9,12 @@ import (
 
 // GeminiCLI は高推論用の Gemini モデルを CLI 経由で呼び出すプロバイダです。
 // `gemini` コマンドを os/exec で実行し、標準出力を応答として返します。
-type GeminiCLI struct{}
+type GeminiCLI struct {
+	Model string // e.g. "gemini-2.5-flash", "gemini-2.5-pro" — 空の場合は gemini CLI のデフォルト
+}
 
 // Generate はシステムプロンプトとユーザープロンプトを結合して
-// Gemini CLI に渡し、応答テキストを返します。
+// Gemini CLI にワンショット実行（-p オプション）で渡し、応答テキストを返します。
 func (g *GeminiCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 	// gemini コマンドの存在確認
 	if _, err := exec.LookPath("gemini"); err != nil {
@@ -22,8 +24,12 @@ func (g *GeminiCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 	// プロンプトを構造化して結合
 	combinedPrompt := formatPrompt(systemPrompt, userPrompt)
 
-	// gemini コマンドを実行
-	cmd := exec.Command("gemini", "-p", combinedPrompt)
+	// gemini コマンドを実行（-p でワンショット、--model でモデル指定）
+	args := []string{"-p", combinedPrompt}
+	if g.Model != "" {
+		args = append(args, "--model", g.Model)
+	}
+	cmd := exec.Command("gemini", args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

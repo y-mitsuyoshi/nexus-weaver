@@ -36,6 +36,26 @@ func CreateBranch(name string) error {
 	return nil
 }
 
+// DeleteBranch は指定されたローカルブランチを削除します。
+// 現在チェックアウトしているブランチは削除できないため、
+// 必要に応じて事前に別ブランチへ切り替えてください。
+func DeleteBranch(name string) error {
+	cmd := exec.Command("git", "branch", "-D", name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to delete branch %s: %w\noutput: %s", name, err, string(output))
+	}
+	return nil
+}
+
+// SwitchBranch は指定されたブランチにチェックアウトします。
+func SwitchBranch(name string) error {
+	cmd := exec.Command("git", "checkout", name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to switch to branch %s: %w\noutput: %s", name, err, string(output))
+	}
+	return nil
+}
+
 // Push は指定されたリモートに現在のブランチをプッシュします。
 func Push(remote string) error {
 	if remote == "" {

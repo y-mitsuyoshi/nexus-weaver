@@ -152,3 +152,96 @@ func TestAutoCommit_InitialCommitCreatesHead(t *testing.T) {
 		t.Fatalf("expected Rollback(\"\") to return error")
 	}
 }
+
+func TestDeleteBranch(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "test")
+
+	if err := os.WriteFile(dir+"/d.txt", []byte("content"), 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+	runGit(t, dir, "add", "d.txt")
+	runGit(t, dir, "commit", "-m", "init")
+
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+
+	// ブランチを作成
+	if err := CreateBranch("feature/test-delete"); err != nil {
+		t.Fatalf("CreateBranch failed: %v", err)
+	}
+
+	// 元のブランチに戻る
+	if err := SwitchBranch("master"); err != nil {
+		// git init のデフォルトブランチ名は環境による
+		if err2 := SwitchBranch("main"); err2 != nil {
+			t.Fatalf("SwitchBranch failed: %v / %v", err, err2)
+		}
+	}
+
+	// ブランチを削除
+	if err := DeleteBranch("feature/test-delete"); err != nil {
+		t.Fatalf("DeleteBranch failed: %v", err)
+	}
+
+	// 削除されたブランチが存在しないことを確認
+	cmd := exec.Command("git", "branch", "--list", "feature/test-delete")
+	cmd.Dir = dir
+	out, _ := cmd.CombinedOutput()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("expected branch to be deleted, but found: %s", string(out))
+	}
+}
+
+func TestSwitchBranch(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "test")
+
+	if err := os.WriteFile(dir+"/e.txt", []byte("content"), 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+	runGit(t, dir, "add", "e.txt")
+	runGit(t, dir, "commit", "-m", "init")
+
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	defer func() { _ = os.Chdir(cwd) }()
+
+	// 現在のブランチ名を記憶
+	originalBranch, err := GetCurrentBranch()
+	if err != nil {
+		t.Fatalf("GetCurrentBranch failed: %v", err)
+	}
+
+	// 新しいブランチを作成して移動
+	if err := CreateBranch("feature/test-switch"); err != nil {
+		t.Fatalf("CreateBranch failed: %v", err)
+	}
+
+	current, _ := GetCurrentBranch()
+	if current != "feature/test-switch" {
+		t.Fatalf("expected 'feature/test-switch', got %q", current)
+	}
+
+	// 元のブランチに戻る
+	if err := SwitchBranch(originalBranch); err != nil {
+		t.Fatalf("SwitchBranch failed: %v", err)
+	}
+
+	current, _ = GetCurrentBranch()
+	if current != originalBranch {
+		t.Fatalf("expected %q, got %q", originalBranch, current)
+	}
+
+	// クリーンアップ
+	_ = DeleteBranch("feature/test-switch")
+}

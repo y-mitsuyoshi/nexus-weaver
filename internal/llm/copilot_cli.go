@@ -26,7 +26,7 @@ func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 
 	// ワンショット実行: -p オプションでプロンプトを渡す
 	args := []string{"-p", combinedPrompt}
-	if c.Model != "" && c.Model != "copilot-cli" {
+	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
 	cmd := exec.Command("copilot", args...)

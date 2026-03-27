@@ -12,6 +12,7 @@ import (
 // LocalQwen はコスト・速度重視のローカル Qwen モデル（OpenAI互換API）を呼び出すプロバイダです。
 type LocalQwen struct {
 	Endpoint string // e.g. "http://localhost:11434/v1/chat/completions"
+	Model    string // e.g. "qwen3-30b-a3b" — 空の場合は "qwen2.5-coder" を使用
 }
 
 // chatRequest は OpenAI 互換 API へのリクエストボディです。
@@ -38,8 +39,13 @@ type chatResponse struct {
 // Generate はシステムプロンプトとユーザープロンプトを OpenAI 互換 API に送信し、
 // 応答テキストを返します。
 func (q *LocalQwen) Generate(systemPrompt, userPrompt string) (string, error) {
+	modelName := q.Model
+	if modelName == "" {
+		modelName = "qwen2.5-coder"
+	}
+
 	reqBody := chatRequest{
-		Model: "qwen2.5-coder",
+		Model: modelName,
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
