@@ -423,9 +423,16 @@ func (e *Engine) runGitBranch(step Step) error {
 		branchName = "feature/" + branchName
 	}
 
-	e.Logger.Info("Creating new branch", "name", branchName)
-	if err := fs.CreateBranch(branchName); err != nil {
-		return fmt.Errorf("failed to create branch %q: %w", branchName, err)
+	if fs.BranchExists(branchName) {
+		e.Logger.Info("Branch already exists, switching", "name", branchName)
+		if err := fs.SwitchBranch(branchName); err != nil {
+			return fmt.Errorf("failed to switch to existing branch %q: %w", branchName, err)
+		}
+	} else {
+		e.Logger.Info("Creating new branch", "name", branchName)
+		if err := fs.CreateBranch(branchName); err != nil {
+			return fmt.Errorf("failed to create branch %q: %w", branchName, err)
+		}
 	}
 
 	// ブランチ名をテンプレート変数に登録（{{branch_name}} で参照可能）
