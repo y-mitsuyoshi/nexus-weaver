@@ -27,6 +27,12 @@ func IsProtectedBranch(branch string) bool {
 	return false
 }
 
+// BranchExists はローカルブランチが存在するかを返します。
+func BranchExists(name string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
+	return cmd.Run() == nil
+}
+
 // CreateBranch は新しいブランチを作成し、チェックアウトします。
 func CreateBranch(name string) error {
 	cmd := exec.Command("git", "checkout", "-b", name)
