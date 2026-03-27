@@ -1,4 +1,4 @@
-package generator
+package main
 
 // GenerateResult は、何らかの生成処理の結果を表現するための構造体です。
 // 生成されたコンテンツ、処理の成功/失敗ステータス、および失敗時のエラーメッセージを保持します。
