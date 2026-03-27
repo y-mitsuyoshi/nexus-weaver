@@ -2,7 +2,7 @@ name: "Feature Development Pipeline"
 # provider: LLMプロバイダー ("gemini-cli", "copilot-cli")
 # model:    使用モデル (省略時はプロバイダのデフォルト)
 # 利用可能モデル:
-#   gemini-cli:  gemini-3-flash-preview (高推論), gemini-2.5-flash (軽量)
+#   gemini-cli:  gemini-2.5-flash
 #   copilot-cli: gpt-5-mini, gpt-5, claude-sonnet-4, claude-sonnet-4.5
 steps:
   # --- 単純タスク: 軽量モデルで十分 ---
@@ -24,7 +24,7 @@ steps:
     type: "llm_task"
     agent_role: "ProductManager"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/pm.md"
     input_file: "./inbox/idea.txt"
     output_file: "./docs/prd.md"
@@ -32,7 +32,7 @@ steps:
   - id: "prd_review"
     type: "review"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/prd_reviewer.md"
     target_file: "./docs/prd.md"
     max_retries: 3
@@ -42,7 +42,7 @@ steps:
     type: "llm_task"
     agent_role: "Architect"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/architect.md"
     input_file: "./docs/prd.md"
     output_file: "./docs/architecture.md"
@@ -50,7 +50,7 @@ steps:
   - id: "architecture_review"
     type: "review"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/architecture_reviewer.md"
     target_file: "./docs/architecture.md"
     max_retries: 3
@@ -60,7 +60,7 @@ steps:
     type: "llm_task"
     agent_role: "TestEngineer"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/test_engineer.md"
     input_file: "./docs/architecture.md"
     output_file: "./cmd/nexus-weaver/main_test.go"
@@ -83,14 +83,14 @@ steps:
     max_retries: 3
     command: "go test ./..."
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
 
   - id: "code_review"
     type: "review"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/reviewer.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
@@ -98,7 +98,7 @@ steps:
   - id: "qa_review"
     type: "review"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/qa.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
@@ -106,7 +106,7 @@ steps:
   - id: "security_review"
     type: "review"
     provider: "gemini-cli"
-    model: "gemini-3-flash-preview"
+    model: "gemini-2.5-flash"
     review_prompt_file: "./prompts/security.md"
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
