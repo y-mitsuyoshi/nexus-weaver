@@ -1,0 +1,10 @@
+#!/bin/sh
+# Pre-commit hook: gofmt チェック
+# インストール: make setup-hooks
+
+UNFORMATTED=$(gofmt -l . 2>&1)
+if [ -n "$UNFORMATTED" ]; then
+    echo "Files must be gofmt'd. Run 'gofmt -w .' to fix:"
+    echo "$UNFORMATTED"
+    exit 1
+fi

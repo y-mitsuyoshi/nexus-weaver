@@ -155,11 +155,11 @@ func (e *Engine) Run(wf *Workflow) error {
 		if err != nil {
 			e.Logger.Error("Step failed", "id", step.ID, "error", err)
 			e.addStepResult(StepResult{
-					StepID:    step.ID,
-					StepType:  step.Type,
-					AgentRole: step.AgentRole,
-					Success:   false,
-					Summary:   fmt.Sprintf("エラー: %s", err.Error()),
+				StepID:    step.ID,
+				StepType:  step.Type,
+				AgentRole: step.AgentRole,
+				Success:   false,
+				Summary:   fmt.Sprintf("エラー: %s", err.Error()),
 			})
 			return fmt.Errorf("step %q failed: %w", step.ID, err)
 		}
@@ -167,10 +167,10 @@ func (e *Engine) Run(wf *Workflow) error {
 		// 成功したステップの結果を蓄積（LLM以外は最低限の記録）
 		if step.Type != "llm_task" {
 			e.addStepResult(StepResult{
-					StepID:    step.ID,
-					StepType:  step.Type,
-					AgentRole: step.AgentRole,
-					Success:   true,
+				StepID:    step.ID,
+				StepType:  step.Type,
+				AgentRole: step.AgentRole,
+				Success:   true,
 			})
 		}
 
