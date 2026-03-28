@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/y-mitsuyoshi/nexus-weaver/internal/fs"
@@ -212,5 +213,118 @@ func TestEngine_UnknownStepType(t *testing.T) {
 	err := engine.Run(wf)
 	if err == nil {
 		t.Fatal("expected error for unknown step type, got nil")
+	}
+}
+
+func TestEngine_StepResultAccumulation(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	engine := NewEngine(logger)
+
+	if len(engine.StepResults) != 0 {
+		t.Fatalf("expected empty StepResults, got %d", len(engine.StepResults))
+	}
+
+	engine.addStepResult(StepResult{
+		StepID:    "step1",
+		StepType:  "llm_task",
+		AgentRole: "PM",
+		Summary:   "PRDを生成しました",
+		Success:   true,
+	})
+
+	if len(engine.StepResults) != 1 {
+		t.Fatalf("expected 1 StepResult, got %d", len(engine.StepResults))
+	}
+	if engine.StepResults[0].StepID != "step1" {
+		t.Errorf("expected step1, got %q", engine.StepResults[0].StepID)
+	}
+}
+
+func TestEngine_BuildContextSummary_Empty(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	engine := NewEngine(logger)
+
+	summary := engine.buildContextSummary()
+	if summary != "" {
+		t.Errorf("expected empty summary, got %q", summary)
+	}
+}
+
+func TestEngine_BuildContextSummary_WithResults(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	engine := NewEngine(logger)
+
+	engine.addStepResult(StepResult{
+		StepID:     "generate_branch",
+		StepType:   "llm_task",
+		AgentRole:  "ReleaseEngineer",
+		OutputFile: "docs/branch_name.txt",
+		Summary:    "feature/new-feature",
+		Success:    true,
+	})
+	engine.addStepResult(StepResult{
+		StepID:   "branch_creation",
+		StepType: "git_branch",
+		Success:  true,
+	})
+
+	summary := engine.buildContextSummary()
+	if summary == "" {
+		t.Fatal("expected non-empty summary")
+	}
+	for _, check := range []string{"ワークフロー実行コンテキスト", "generate_branch", "ReleaseEngineer", "feature/new-feature", "成功"} {
+		if !strings.Contains(summary, check) {
+			t.Errorf("summary missing %q", check)
+		}
+	}
+}
+
+func TestSummarizeOutput(t *testing.T) {
+	if result := summarizeOutput("hello", 500); result != "hello" {
+		t.Errorf("short: got %q", result)
+	}
+	if result := summarizeOutput(strings.Repeat("a", 600), 500); !strings.Contains(result, "以下省略") {
+		t.Error("truncation marker missing")
+	}
+	if result := summarizeOutput(strings.Repeat("b", 600), 0); !strings.Contains(result, "以下省略") {
+		t.Error("default max: truncation marker missing")
+	}
+}
+
+func TestEngine_CommandTaskAccumulatesResult(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	engine := NewEngine(logger)
+
+	branchName := fmt.Sprintf("fix/result-acc-test-%d", os.Getpid())
+	cleanupBranch(t, branchName)
+
+	wf := &Workflow{
+		Name: "Test",
+		Steps: []Step{
+			{
+				ID:         "branch-setup",
+				Type:       "git_branch",
+				BranchName: branchName,
+			},
+			{
+				ID:      "echo-test",
+				Type:    "command_task",
+				Command: "echo hello",
+			},
+		},
+	}
+
+	if err := engine.Run(wf); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(engine.StepResults) != 2 {
+		t.Fatalf("expected 2 StepResults, got %d", len(engine.StepResults))
+	}
+	if engine.StepResults[0].StepID != "branch-setup" {
+		t.Errorf("step 0: expected branch-setup, got %q", engine.StepResults[0].StepID)
+	}
+	if !engine.StepResults[1].Success {
+		t.Error("step 1: expected success")
 	}
 }
