@@ -1,4 +1,4 @@
-.PHONY: build build-local install test test-local lint lint-local clean
+.PHONY: build build-local install test test-local lint lint-local setup-hooks clean
 
 # バージョン情報
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -17,7 +17,7 @@ test:
 
 # リントを Docker で実行
 lint:
-	docker compose run --rm --entrypoint "sh" test -c "gofmt -l . && go vet ./..."
+	docker compose run --rm --entrypoint "sh" test -c "if [ -n \"$$(gofmt -l .)\" ]; then echo 'Files must be gofmted:'; gofmt -l .; exit 1; fi && go vet ./..."
 
 # --- ローカル ターゲット (Go 1.24+ が必要) ---
 
@@ -35,9 +35,15 @@ test-local:
 
 # リントをローカルで実行
 lint-local:
-	gofmt -l . && go vet ./...
+	@if [ -n "$$(gofmt -l .)" ]; then echo 'Files must be gofmted:'; gofmt -l .; exit 1; fi
+	go vet ./...
 
 # --- ユーティリティ ---
+
+# Git フックをインストール
+setup-hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed (using .githooks/)"
 
 # クリーン
 clean:

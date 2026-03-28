@@ -82,3 +82,42 @@ func TestExtractAllCodeBlocks_NotFound(t *testing.T) {
 		t.Fatal("expected error for missing code blocks, got nil")
 	}
 }
+
+func TestExtractCodeBlock_NoTrailingNewline(t *testing.T) {
+	// 末尾改行なしのコードブロック（低品質モデルで発生しやすい）
+	markdown := "```go\npackage main\n\nfunc main() {}\n```"
+
+	result, err := ExtractCodeBlock(markdown, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "package main") {
+		t.Errorf("expected 'package main', got: %s", result)
+	}
+}
+
+func TestExtractCodeBlock_NoNewlineAfterLang(t *testing.T) {
+	// 言語指定直後に改行なし（```gopackage main...のようなケース）
+	markdown := "```go\nfunc hello() {}\n```"
+
+	result, err := ExtractCodeBlock(markdown, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "func hello()") {
+		t.Errorf("expected 'func hello()', got: %s", result)
+	}
+}
+
+func TestExtractCodeBlock_ClosingBackticksNoNewline(t *testing.T) {
+	// 閉じバッククォートの直前に改行がない場合
+	markdown := "```go\npackage main```"
+
+	result, err := ExtractCodeBlock(markdown, "go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result, "package main") {
+		t.Errorf("expected 'package main', got: %s", result)
+	}
+}

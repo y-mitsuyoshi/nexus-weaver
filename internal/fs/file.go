@@ -36,7 +36,8 @@ func WriteFile(path, content string) error {
 // 複数のブロックが存在する場合は最初のものを返します。
 func ExtractCodeBlock(markdown, lang string) (string, error) {
 	// ```lang と ``` で囲まれた部分を抽出する正規表現
-	pattern := fmt.Sprintf("(?s)```%s\\s*\\n(.*?)\\n\\s*```", regexp.QuoteMeta(lang))
+	// 末尾改行の有無や前後の空白に寛容に対応
+	pattern := fmt.Sprintf("(?s)```%s\\s*(.*?)\\s*```", regexp.QuoteMeta(lang))
 	re := regexp.MustCompile(pattern)
 
 	matches := re.FindStringSubmatch(markdown)
@@ -49,7 +50,7 @@ func ExtractCodeBlock(markdown, lang string) (string, error) {
 
 // ExtractAllCodeBlocks は Markdown テキストから指定言語の全てのコードブロックを抽出します。
 func ExtractAllCodeBlocks(markdown, lang string) ([]string, error) {
-	pattern := fmt.Sprintf("(?s)```%s\\s*\\n(.*?)\\n\\s*```", regexp.QuoteMeta(lang))
+	pattern := fmt.Sprintf("(?s)```%s\\s*(.*?)\\s*```", regexp.QuoteMeta(lang))
 	re := regexp.MustCompile(pattern)
 
 	allMatches := re.FindAllStringSubmatch(markdown, -1)
