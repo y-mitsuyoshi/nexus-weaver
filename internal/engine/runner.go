@@ -174,8 +174,20 @@ func (e *Engine) Run(wf *Workflow) error {
 			})
 		}
 
+		// ファイル出力があったステップの後は自動コミット（中間成果物の保全）
+		if step.OutputFile != "" || step.Type == "command_task" {
+			if _, acErr := fs.AutoCommit(fmt.Sprintf("auto: step %s completed", step.ID)); acErr != nil {
+				e.Logger.Warn("Auto-commit after step failed (continuing)", "step", step.ID, "error", acErr)
+			}
+		}
+
 		e.Logger.Info("Step completed", "id", step.ID)
 		i++
+	}
+
+	// ワークフロー完了時に最終自動コミット（未コミットの成果物を確保）
+	if _, err := fs.AutoCommit("auto: workflow completed"); err != nil {
+		e.Logger.Warn("Final auto-commit failed", "error", err)
 	}
 
 	e.Logger.Info("Workflow completed successfully", "name", wf.Name)
@@ -229,7 +241,6 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 		}
 
 		fixApplied := false
-		allApproved := true
 
 		for _, reviewStep := range reviews {
 			approved, fixed, err := e.runSingleReview(reviewStep)
@@ -263,7 +274,6 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 		e.Logger.Warn("⚠️  Fix applied during review gate — restarting ALL reviews",
 			"round", gateAttempt+1,
 		)
-		_ = allApproved // 修正があっても個別 approve はされているのでここでは無視
 	}
 
 	// リトライ上限到達
@@ -356,6 +366,8 @@ func (e *Engine) runLLMTask(step Step) error {
 				outputData = extracted
 			} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
+			} else {
+				return fmt.Errorf("failed to extract Go code block from LLM output for step %q (output may not contain valid code fences)", step.ID)
 			}
 		} else if strings.HasSuffix(step.OutputFile, ".yml") || strings.HasSuffix(step.OutputFile, ".yaml") {
 			if extracted, err := fs.ExtractCodeBlock(result, "yaml"); err == nil {
@@ -432,6 +444,13 @@ func (e *Engine) runTestLoop(step Step) error {
 
 		// Fixer モデルに修正を依頼
 		if err := e.runFixer(step, testErr.Error()); err != nil {
+			e.Logger.Error("Fixer failed", "attempt", i+1, "error", err)
+			if preLoopHash != "" {
+				e.Logger.Info("Rolling back due to fixer failure")
+				if rbErr := fs.Rollback(preLoopHash); rbErr != nil {
+					e.Logger.Error("Rollback failed", "error", rbErr)
+				}
+			}
 			return fmt.Errorf("fixer failed: %w", err)
 		}
 	}
@@ -510,7 +529,7 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 		} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 			fixCode = extracted
 		} else {
-			e.Logger.Warn("No code block found in fixer response, using full response as fix")
+			return fmt.Errorf("fixer output does not contain a valid code block for %s", step.TargetFile)
 		}
 	} else {
 		if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
@@ -671,10 +690,16 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 }
 
 // runGitPush は git_push タイプのステップを実行します。
+// プッシュ前に未コミットの変更を自動コミットし、成果物の漏れを防ぎます。
 func (e *Engine) runGitPush(step Step) error {
 	remote := step.Remote
 	if remote == "" {
 		remote = "origin"
+	}
+
+	// プッシュ前に未コミットの変更を自動コミット（成果物の漏れ防止）
+	if _, err := fs.AutoCommit("auto-commit-before-push"); err != nil {
+		e.Logger.Warn("Auto-commit before push failed (continuing)", "error", err)
 	}
 
 	e.Logger.Info("Pushing to remote", "remote", remote)
