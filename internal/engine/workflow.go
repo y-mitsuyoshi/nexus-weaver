@@ -56,6 +56,16 @@ func ResolveModelSpec(provider, model string) string {
 	return model
 }
 
+// StepResult はステップ実行結果を保持し、後続ステップへのコンテキスト伝搬に使用します。
+type StepResult struct {
+	StepID     string // ステップ識別子
+	StepType   string // ステップタイプ
+	AgentRole  string // エージェントの役割
+	Summary    string // 出力の要約（先頭部分）
+	OutputFile string // 出力ファイルパス
+	Success    bool   // 成功したか
+}
+
 // Workflow はYAMLで定義された一連の開発パイプラインを管理する構造体です。
 type Workflow struct {
 	Name  string `yaml:"name"`

@@ -19,6 +19,8 @@ type Engine struct {
 	// Vars はワークフロー実行中に動的に設定されるテンプレート変数です。
 	// ステップのファイルパスや command 内の {{key}} が実行時に置換されます。
 	Vars map[string]string
+	// StepResults は完了したステップの結果を蓄積し、後続ステップにコンテキストを伝搬します。
+	StepResults []StepResult
 }
 
 // NewEngine は構造化ログ付きの新しい Engine インスタンスを返します。
@@ -26,7 +28,53 @@ func NewEngine(logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Engine{Logger: logger, Vars: make(map[string]string)}
+	return &Engine{Logger: logger, Vars: make(map[string]string), StepResults: make([]StepResult, 0)}
+}
+
+// addStepResult はステップ実行結果を蓄積します。
+func (e *Engine) addStepResult(result StepResult) {
+	e.StepResults = append(e.StepResults, result)
+}
+
+// buildContextSummary は蓄積されたステップ結果からコンテキスト要約文字列を構築します。
+func (e *Engine) buildContextSummary() string {
+	if len(e.StepResults) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n\n---\n# ワークフロー実行コンテキスト（前ステップの成果）\n")
+	sb.WriteString("以下は今回のワークフローで既に完了したステップの要約です。\n")
+	sb.WriteString("これらの決定事項・成果物との一貫性を保ってください。\n\n")
+
+	for _, r := range e.StepResults {
+		status := "✅ 成功"
+		if !r.Success {
+			status = "❌ 失敗"
+		}
+		sb.WriteString(fmt.Sprintf("## ステップ: %s (%s) [%s]\n", r.StepID, r.AgentRole, status))
+		if r.OutputFile != "" {
+			sb.WriteString(fmt.Sprintf("出力先: %s\n", r.OutputFile))
+		}
+		if r.Summary != "" {
+			sb.WriteString(fmt.Sprintf("要約:\n%s\n", r.Summary))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// summarizeOutput は出力テキストの先頭部分を要約として切り出します。
+func summarizeOutput(content string, maxLen int) string {
+	if maxLen <= 0 {
+		maxLen = 500
+	}
+	content = strings.TrimSpace(content)
+	if len(content) <= maxLen {
+		return content
+	}
+	return content[:maxLen] + "\n... (以下省略)"
 }
 
 // Run はワークフローの全ステップを順番に実行します。
@@ -106,7 +154,24 @@ func (e *Engine) Run(wf *Workflow) error {
 
 		if err != nil {
 			e.Logger.Error("Step failed", "id", step.ID, "error", err)
+			e.addStepResult(StepResult{
+					StepID:    step.ID,
+					StepType:  step.Type,
+					AgentRole: step.AgentRole,
+					Success:   false,
+					Summary:   fmt.Sprintf("エラー: %s", err.Error()),
+			})
 			return fmt.Errorf("step %q failed: %w", step.ID, err)
+		}
+
+		// 成功したステップの結果を蓄積（LLM以外は最低限の記録）
+		if step.Type != "llm_task" {
+			e.addStepResult(StepResult{
+					StepID:    step.ID,
+					StepType:  step.Type,
+					AgentRole: step.AgentRole,
+					Success:   true,
+			})
 		}
 
 		e.Logger.Info("Step completed", "id", step.ID)
@@ -242,6 +307,12 @@ func (e *Engine) runLLMTask(step Step) error {
 		}
 	}
 
+	// ワークフローコンテキスト（前ステップの成果要約）を注入
+	contextSummary := e.buildContextSummary()
+	if contextSummary != "" {
+		inputData += contextSummary
+	}
+
 	// コード生成時は既存プロジェクト構造をコンテキストとして自動注入
 	if isCodeFile(step.OutputFile) {
 		ctx := collectCodebaseContext()
@@ -262,6 +333,19 @@ func (e *Engine) runLLMTask(step Step) error {
 	result, err := provider.Generate(systemPrompt, inputData)
 	if err != nil {
 		return fmt.Errorf("LLM generation failed: %w", err)
+	}
+
+	// 出力バリデーション（ガードレール）: 空出力を拒否
+	trimmed := strings.TrimSpace(result)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("LLM returned empty output for step %q", step.ID)
+	}
+	if len(trimmed) < 10 && step.OutputFile != "" {
+		e.Logger.Warn("LLM output suspiciously short",
+			"step", step.ID,
+			"length", len(trimmed),
+			"content", trimmed,
+		)
 	}
 
 	if step.OutputFile != "" {
@@ -292,6 +376,16 @@ func (e *Engine) runLLMTask(step Step) error {
 		}
 		e.Logger.Info("Output written", "file", step.OutputFile)
 	}
+
+	// ステップ結果を蓄積（後続ステップへのコンテキスト伝搬用）
+	e.addStepResult(StepResult{
+		StepID:     step.ID,
+		StepType:   step.Type,
+		AgentRole:  step.AgentRole,
+		OutputFile: step.OutputFile,
+		Summary:    summarizeOutput(result, 500),
+		Success:    true,
+	})
 
 	return nil
 }
@@ -381,6 +475,12 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 
 	userPrompt := fmt.Sprintf("%s\n\n指摘内容・エラー出力:\n%s",
 		contextDesc, errorOrReviewOutput)
+
+	// ワークフローコンテキスト（前ステップの成果要約）を注入して修正の方向性を伝える
+	fixerContext := e.buildContextSummary()
+	if fixerContext != "" {
+		userPrompt += fixerContext
+	}
 
 	// 修正対象ファイルの現在の内容を含める
 	if currentContent != "" {
@@ -502,6 +602,12 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 
 	userPrompt := fmt.Sprintf("以下のファイルをレビューしてください:\n\nファイル: %s\n\n内容:\n%s",
 		step.TargetFile, targetContent)
+
+	// ワークフローコンテキスト（前ステップの成果要約）を注入してレビューの観点を補強
+	reviewContext := e.buildContextSummary()
+	if reviewContext != "" {
+		userPrompt += reviewContext
+	}
 
 	e.Logger.Info("Running reviewer", "model", modelSpec)
 	result, err := provider.Generate(reviewPrompt, userPrompt)
