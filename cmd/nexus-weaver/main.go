@@ -142,19 +142,22 @@ func main() {
 		"steps", len(wf.Steps),
 	)
 
-	// ステップ一覧の表示
-	for i, step := range wf.Steps {
-		logger.Info(fmt.Sprintf("  Step %d", i+1),
-			"id", step.ID,
-			"type", step.Type,
-			"provider", step.Provider,
-			"model", step.Model,
-		)
-	}
-
-	// ドライランモードの場合は実行せずに終了
+	// ドライランモードの場合はステップ情報を表示して終了
 	if *dryRun {
-		logger.Info("Dry run mode: skipping execution")
+		for i, step := range wf.Steps {
+			fmt.Printf("[DRY-RUN] Step %d: %s\n", i+1, step.ID)
+			fmt.Printf("  Type     : %s\n", step.Type)
+			if step.Provider != "" {
+				fmt.Printf("  Provider : %s\n", step.Provider)
+			}
+			if step.Model != "" {
+				fmt.Printf("  Model    : %s\n", step.Model)
+			}
+			if step.OutputFile != "" {
+				fmt.Printf("  Output   : %s\n", step.OutputFile)
+			}
+			fmt.Println()
+		}
 		return
 	}
 

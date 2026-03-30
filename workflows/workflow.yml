@@ -13,11 +13,12 @@ steps:
     model: "gemini-2.5-flash"
     system_prompt_file: "./prompts/branch_namer.md"
     input_file: "./inbox/idea.txt"
-    output_file: "./docs/branch_name.txt"
+    # output_file を指定しないことで、ファイル保存を抑制しメモリ(Vars)のみに保持する
 
   - id: "branch_creation"
     type: "git_branch"
-    branch_name_file: "./docs/branch_name.txt"
+    # branch_name_file は省略（generate_branch_name の結果を内部的に使用する）
+    # branch_name_file: "./docs/branch_name.txt"
 
   - id: "prd_generation"
     type: "llm_task"

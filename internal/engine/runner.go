@@ -150,9 +150,10 @@ func (e *Engine) Run(wf *Workflow) error {
 		)
 
 		var err error
+		var result string
 		switch step.Type {
 		case "llm_task":
-			err = e.runLLMTask(step)
+			result, err = e.runLLMTask(step)
 		case "loop":
 			err = e.runTestLoop(step)
 		case "command_task":
@@ -184,6 +185,16 @@ func (e *Engine) Run(wf *Workflow) error {
 				StepType:  step.Type,
 				AgentRole: step.AgentRole,
 				Success:   true,
+			})
+		} else {
+			// llm_task の結果を蓄積
+			e.addStepResult(StepResult{
+				StepID:     step.ID,
+				StepType:   step.Type,
+				AgentRole:  step.AgentRole,
+				OutputFile: step.OutputFile,
+				Summary:    result,
+				Success:    true,
 			})
 		}
 
@@ -304,12 +315,12 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 // 2. システムプロンプトと入力ファイルを読み込み
 // 3. プロジェクト構造を自動注入（全ステップ共通）
 // 4. LLM に Generate を依頼
-// 5. 結果を出力ファイルに書き込み
-func (e *Engine) runLLMTask(step Step) error {
+// 5. 結果を出力ファイルに書き込み（指定がある場合）
+func (e *Engine) runLLMTask(step Step) (string, error) {
 	modelSpec := ResolveModelSpec(step.Provider, step.Model)
 	provider, err := llm.GetProvider(modelSpec)
 	if err != nil {
-		return fmt.Errorf("failed to get provider: %w", err)
+		return "", fmt.Errorf("failed to get provider: %w", err)
 	}
 
 	// システムプロンプトの読み込み
@@ -317,7 +328,7 @@ func (e *Engine) runLLMTask(step Step) error {
 	if step.SystemPromptFile != "" {
 		systemPrompt, err = fs.ReadFile(step.SystemPromptFile)
 		if err != nil {
-			return fmt.Errorf("failed to read system prompt: %w", err)
+			return "", fmt.Errorf("failed to read system prompt: %w", err)
 		}
 	}
 
@@ -326,7 +337,7 @@ func (e *Engine) runLLMTask(step Step) error {
 	if step.InputFile != "" {
 		inputData, err = fs.ReadFile(step.InputFile)
 		if err != nil {
-			return fmt.Errorf("failed to read input file: %w", err)
+			return "", fmt.Errorf("failed to read input file: %w", err)
 		}
 	}
 
@@ -356,13 +367,13 @@ func (e *Engine) runLLMTask(step Step) error {
 
 	result, err := provider.Generate(systemPrompt, inputData)
 	if err != nil {
-		return fmt.Errorf("LLM generation failed: %w", err)
+		return "", fmt.Errorf("LLM generation failed: %w", err)
 	}
 
 	// 出力バリデーション（ガードレール）: 空出力を拒否
 	trimmed := strings.TrimSpace(result)
 	if len(trimmed) == 0 {
-		return fmt.Errorf("LLM returned empty output for step %q", step.ID)
+		return "", fmt.Errorf("LLM returned empty output for step %q", step.ID)
 	}
 	if len(trimmed) < 10 && step.OutputFile != "" {
 		e.Logger.Warn("LLM output suspiciously short",
@@ -381,7 +392,7 @@ func (e *Engine) runLLMTask(step Step) error {
 			} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
 			} else {
-				return fmt.Errorf("failed to extract Go code block from LLM output for step %q (output may not contain valid code fences)", step.ID)
+				return "", fmt.Errorf("failed to extract Go code block from LLM output for step %q (output may not contain valid code fences)", step.ID)
 			}
 		} else if strings.HasSuffix(step.OutputFile, ".yml") || strings.HasSuffix(step.OutputFile, ".yaml") {
 			if extracted, err := fs.ExtractCodeBlock(result, "yaml"); err == nil {
@@ -398,22 +409,12 @@ func (e *Engine) runLLMTask(step Step) error {
 		}
 
 		if err := fs.WriteFile(step.OutputFile, outputData); err != nil {
-			return fmt.Errorf("failed to write output: %w", err)
+			return "", fmt.Errorf("failed to write output: %w", err)
 		}
 		e.Logger.Info("Output written", "file", step.OutputFile)
 	}
 
-	// ステップ結果を蓄積（後続ステップへのコンテキスト伝搬用）
-	e.addStepResult(StepResult{
-		StepID:     step.ID,
-		StepType:   step.Type,
-		AgentRole:  step.AgentRole,
-		OutputFile: step.OutputFile,
-		Summary:    summarizeOutput(result, 500),
-		Success:    true,
-	})
-
-	return nil
+	return result, nil
 }
 
 // runTestLoop は loop タイプのステップを実行します。
@@ -599,6 +600,22 @@ func (e *Engine) runCommandTask(step Step) error {
 // runGitBranch は git_branch タイプのステップを実行します。
 func (e *Engine) runGitBranch(step Step) error {
 	branchName := step.BranchName
+
+	// 1. 直前の llm_task などで生成された結果があれば、それを優先して使用する
+	if branchName == "" {
+		for i := len(e.StepResults) - 1; i >= 0; i-- {
+			res := e.StepResults[i]
+			// 直近の llm_task (ReleaseEngineer) の要約または全文をブランチ名候補とする
+			// Summary ではなく、最新の Vars や StepResults から取得するように拡張可能
+			if res.AgentRole == "ReleaseEngineer" && res.Success {
+				branchName = extractLastNonEmptyLine(res.Summary)
+				e.Logger.Info("Using branch name from previous step result", "name", branchName)
+				break
+			}
+		}
+	}
+
+	// 2. ファイル指定がある場合はファイルから読み込む（既存挙動の互換性）
 	if branchName == "" && step.BranchNameFile != "" {
 		content, err := fs.ReadFile(step.BranchNameFile)
 		if err != nil {
