@@ -31,6 +31,27 @@ func WriteFile(path, content string) error {
 	return nil
 }
 
+// AppendFile は指定されたパスのファイルにコンテンツを追記します。
+// ファイルが存在しない場合は新規作成します。
+// 必要に応じて親ディレクトリを自動的に作成します。
+func AppendFile(path, content string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s for append: %w", path, err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(content); err != nil {
+		return fmt.Errorf("failed to append to file %s: %w", path, err)
+	}
+	return nil
+}
+
 // ExtractCodeBlock は Markdown テキストからフェンスドコードブロックを抽出します。
 // lang に対応する言語のコードブロック（例: ```go ... ```）からコード部分だけを返します。
 // 複数のブロックが存在する場合は最初のものを返します。
