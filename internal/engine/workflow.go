@@ -131,9 +131,11 @@ func validateWorkflow(wf *Workflow) error {
 				return fmt.Errorf("step %q: command is required for command_task", step.ID)
 			}
 		case "git_branch":
-			if step.BranchName == "" && step.BranchNameFile == "" {
-				return fmt.Errorf("step %q: branch_name or branch_name_file is required for git_branch", step.ID)
-			}
+			// branch_name か branch_name_file が指定されているか、
+			// あるいは前段の llm_task (ReleaseEngineer) から自動取得されることを許容する
+			// ここではバリデーションを少し緩和するか、警告に留める
+			// (実行時にチェックされるため)
+			_ = step
 		case "review":
 			if step.Provider == "" && step.Model == "" {
 				return fmt.Errorf("step %q: provider or model is required for review", step.ID)
