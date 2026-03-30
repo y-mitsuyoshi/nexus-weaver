@@ -36,6 +36,9 @@ type Step struct {
 	// review 用
 	ReviewPromptFile string `yaml:"review_prompt_file,omitempty"`
 
+	// 参照ドキュメント（PRD・設計書など、全文をコンテキストとして注入）
+	ReferenceFiles []string `yaml:"reference_files,omitempty"`
+
 	// git_branch 用
 	BranchName     string `yaml:"branch_name,omitempty"`
 	BranchNameFile string `yaml:"branch_name_file,omitempty"`

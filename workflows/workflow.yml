@@ -64,6 +64,8 @@ steps:
     system_prompt_file: "./prompts/engineer.md"
     input_file: "./docs/{{branch_name}}/architecture.md"
     output_file: "./cmd/nexus-weaver/main.go"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
 
   - id: "format_and_vet"
     type: "loop"
@@ -73,6 +75,9 @@ steps:
     model: "claude-sonnet-4.6"
     fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
+      - "./docs/{{branch_name}}/architecture.md"
 
   - id: "test_and_fix_loop"
     type: "loop"
@@ -82,6 +87,9 @@ steps:
     model: "claude-sonnet-4.6"
     fixer_prompt_file: "./prompts/fixer.md"
     target_file: "./cmd/nexus-weaver/main.go"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
+      - "./docs/{{branch_name}}/architecture.md"
 
   - id: "code_review"
     type: "review"
@@ -91,6 +99,9 @@ steps:
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
     fixer_prompt_file: "./prompts/fixer.md"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
+      - "./docs/{{branch_name}}/architecture.md"
 
   - id: "qa_review"
     type: "review"
@@ -100,6 +111,9 @@ steps:
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
     fixer_prompt_file: "./prompts/fixer.md"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
+      - "./docs/{{branch_name}}/architecture.md"
 
   - id: "security_review"
     type: "review"
@@ -109,6 +123,9 @@ steps:
     target_file: "./cmd/nexus-weaver/main.go"
     max_retries: 3
     fixer_prompt_file: "./prompts/fixer.md"
+    reference_files:
+      - "./docs/{{branch_name}}/prd.md"
+      - "./docs/{{branch_name}}/architecture.md"
 
   - id: "pr_title_generation"
     type: "llm_task"
