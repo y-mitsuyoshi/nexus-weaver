@@ -77,6 +77,19 @@ func summarizeOutput(content string, maxLen int) string {
 	return content[:maxLen] + "\n... (以下省略)"
 }
 
+// extractLastNonEmptyLine はテキストの最後の非空行を返します。
+// LLM出力に余分なフォーマット行が含まれる場合の安全策として使用します。
+func extractLastNonEmptyLine(content string) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
 // Run はワークフローの全ステップを順番に実行します。
 // 連続する review ステップは「レビューゲート」としてグループ化され、
 // いずれかの review で修正が発生した場合はグループ全体を最初からやり直します。
@@ -560,7 +573,8 @@ func (e *Engine) runGitBranch(step Step) error {
 		if err != nil {
 			return fmt.Errorf("failed to read branch name file %s: %w", step.BranchNameFile, err)
 		}
-		branchName = strings.TrimSpace(content)
+		// ファイルから最後の非空行を取得（LLM出力に余分なフォーマットが含まれる場合の防御）
+		branchName = extractLastNonEmptyLine(content)
 	}
 
 	if branchName == "" {

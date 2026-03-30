@@ -371,3 +371,49 @@ func TestEngine_CommandTaskAccumulatesResult(t *testing.T) {
 		t.Error("step 1: expected success")
 	}
 }
+
+func TestExtractLastNonEmptyLine(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "clean single line",
+			input: "improvement/dry-run-step-summary",
+			want:  "improvement/dry-run-step-summary",
+		},
+		{
+			name: "copilot CLI formatted output",
+			input: "● Output branch name (shell)\n" +
+				"  │ echo \"improvement/dry-run-step-summary\"\n" +
+				"  └ 2 lines...\n" +
+				"\n" +
+				"improvement/dry-run-step-summary",
+			want: "improvement/dry-run-step-summary",
+		},
+		{
+			name:  "trailing newlines",
+			input: "feature/foo\n\n\n",
+			want:  "feature/foo",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "only whitespace",
+			input: "   \n  \n  ",
+			want:  "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractLastNonEmptyLine(tc.input)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

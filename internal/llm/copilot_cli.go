@@ -39,5 +39,23 @@ func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 		return "", fmt.Errorf("GitHub Copilot CLI execution failed: %w\nstderr: %s", err, stderr.String())
 	}
 
-	return strings.TrimSpace(stdout.String()), nil
+	return cleanCopilotOutput(stdout.String()), nil
+}
+
+// cleanCopilotOutput は Copilot CLI の出力からシェル実行ブロックの
+// フォーマット行（●, │, └ で始まる行）を除去し、実際の応答テキストのみを返します。
+func cleanCopilotOutput(raw string) string {
+	lines := strings.Split(raw, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Copilot CLI のシェル実行ブロック行をスキップ
+		if strings.HasPrefix(trimmed, "●") ||
+			strings.HasPrefix(trimmed, "│") ||
+			strings.HasPrefix(trimmed, "└") {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.TrimSpace(strings.Join(cleaned, "\n"))
 }

@@ -122,3 +122,49 @@ func TestGetProvider_Unknown(t *testing.T) {
 		t.Fatal("expected error for unknown provider, got nil")
 	}
 }
+
+func TestCleanCopilotOutput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain text",
+			input: "improvement/dry-run-step-summary",
+			want:  "improvement/dry-run-step-summary",
+		},
+		{
+			name: "shell execution block",
+			input: "● Output branch name (shell)\n" +
+				"  │ echo \"improvement/dry-run-step-summary\"\n" +
+				"  └ 2 lines...\n" +
+				"\n" +
+				"improvement/dry-run-step-summary",
+			want: "improvement/dry-run-step-summary",
+		},
+		{
+			name: "multiple blocks",
+			input: "● Run command (shell)\n" +
+				"  │ ls -la\n" +
+				"  └ 5 lines...\n" +
+				"\n" +
+				"result line 1\n" +
+				"result line 2",
+			want: "result line 1\nresult line 2",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cleanCopilotOutput(tc.input)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
