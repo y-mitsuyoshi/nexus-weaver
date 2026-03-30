@@ -45,7 +45,8 @@ func (e *Engine) buildContextSummary() string {
 	var sb strings.Builder
 	sb.WriteString("\n\n---\n# ワークフロー実行コンテキスト（前ステップの成果）\n")
 	sb.WriteString("以下は今回のワークフローで既に完了したステップの要約です。\n")
-	sb.WriteString("これらの決定事項・成果物との一貫性を保ってください。\n\n")
+	sb.WriteString("これらの決定事項・成果物との一貫性を保ってください。\n")
+	sb.WriteString("**重要: このセクションは内部メタデータです。あなたの出力にこの情報を転記・引用しないでください。**\n\n")
 
 	for _, r := range e.StepResults {
 		status := "✅ 成功"
@@ -187,13 +188,13 @@ func (e *Engine) Run(wf *Workflow) error {
 				Success:   true,
 			})
 		} else {
-			// llm_task の結果を蓄積
+			// llm_task の結果を蓄積（要約を切り詰めて後続ステップへの過剰な伝搬を防止）
 			e.addStepResult(StepResult{
 				StepID:     step.ID,
 				StepType:   step.Type,
 				AgentRole:  step.AgentRole,
 				OutputFile: step.OutputFile,
-				Summary:    result,
+				Summary:    summarizeOutput(result, 500),
 				Success:    true,
 			})
 		}
