@@ -26,6 +26,8 @@ steps:
   system_prompt_file: "./prompts/pm.txt"  # システムプロンプトのファイルパス
   input_file: "./inbox/idea.txt"     # 入力ファイルのパス
   output_file: "./docs/prd.md"       # 出力先ファイルパス
+  # reference_files:                 # （オプション）追加の参照ドキュメント。
+  #   - "./docs/existing_spec.md"    #  通常は不要 — 完了済みステップのドキュメント出力は自動収集されます
 ```
 
 **必須フィールド**: `id`, `type`, `provider` または `model`
@@ -53,6 +55,8 @@ steps:
   target_file: "./cmd/nexus-weaver/main.go"    # レビュー対象ファイル
   max_retries: 3                          # レビューゲートの最大ラウンド数
   fixer_prompt_file: "./prompts/fixer.md"  # Fixer 用プロンプト
+  # reference_files:                       # （オプション）追加の参照ドキュメント。
+  #   - "./docs/extra_spec.md"             #  通常は不要 — PRD・設計書は自動収集されます
 ```
 
 **必須フィールド**: `id`, `type`, `provider` または `model`, `target_file`

@@ -349,6 +349,13 @@ func (e *Engine) runLLMTask(step Step) (string, error) {
 		systemPrompt += contextSummary
 	}
 
+	// 参照ドキュメント（PRD・設計書）の全文をシステムプロンプトに注入
+	// 実装が要件定義・設計と整合していることを担保する
+	refContext := e.buildReferenceContext(step)
+	if refContext != "" {
+		systemPrompt += refContext
+	}
+
 	// プロジェクト構造をコンテキストとして自動注入
 	// ドキュメント生成（.md 出力）では注入しない — go.mod やファイル一覧は
 	// PRD・設計書の品質に寄与せず、LLM の注意を本来のタスクから逸らす原因になる
@@ -538,6 +545,12 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 		userPrompt += fixerContext
 	}
 
+	// 参照ドキュメント（PRD・設計書）の全文を注入して修正が要件・設計と整合するよう誘導
+	refContext := e.buildReferenceContext(step)
+	if refContext != "" {
+		userPrompt += refContext
+	}
+
 	// 修正対象ファイルの現在の内容を含める
 	if currentContent != "" {
 		userPrompt += fmt.Sprintf("\n\n修正対象ファイル (%s) の現在の内容:\n```\n%s\n```", step.TargetFile, currentContent)
@@ -721,6 +734,12 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 		userPrompt += reviewContext
 	}
 
+	// 参照ドキュメント（PRD・設計書）の全文を注入してレビューが要件・設計と整合しているか確認
+	refContext := e.buildReferenceContext(step)
+	if refContext != "" {
+		userPrompt += refContext
+	}
+
 	e.Logger.Info("Running reviewer", "model", modelSpec)
 	result, err := provider.Generate(reviewPrompt, userPrompt)
 	if err != nil {
@@ -843,6 +862,9 @@ func (e *Engine) resolveStepPaths(step *Step) {
 	step.ReviewPromptFile = e.resolveVars(step.ReviewPromptFile)
 	step.BranchNameFile = e.resolveVars(step.BranchNameFile)
 	step.Command = e.resolveVars(step.Command)
+	for i := range step.ReferenceFiles {
+		step.ReferenceFiles[i] = e.resolveVars(step.ReferenceFiles[i])
+	}
 }
 
 // documentExtensions はドキュメント生成と判定する拡張子です。
@@ -895,6 +917,78 @@ func generateVersionedBackupPath(path string) string {
 			return candidate
 		}
 	}
+}
+
+// collectAutoReferenceFiles は完了済みステップの成果物から自動的に参照すべきドキュメントを収集します。
+// PRD・設計書などのドキュメント出力ファイルの最新版（レビュー・修正反映済み）を返します。
+// excludeFiles に指定されたパスは、既に別経路で入力されているため重複を避けて除外されます。
+func (e *Engine) collectAutoReferenceFiles(excludeFiles ...string) []string {
+	seen := make(map[string]bool)
+	for _, f := range excludeFiles {
+		if f != "" {
+			seen[f] = true
+		}
+	}
+
+	var refs []string
+	for _, r := range e.StepResults {
+		if r.OutputFile != "" && r.Success && isDocumentFile(r.OutputFile) {
+			if !seen[r.OutputFile] {
+				seen[r.OutputFile] = true
+				refs = append(refs, r.OutputFile)
+			}
+		}
+	}
+	return refs
+}
+
+// buildReferenceContext は参照すべきドキュメント（PRD・設計書等）の全文を読み込み、
+// コンテキスト文字列として返します。
+//
+// 参照ドキュメントは以下の2つのソースから自動的に決定されます:
+//  1. 自動収集: 完了済みステップのドキュメント出力（最新版 = レビュー・修正反映済み）
+//  2. 明示指定: ステップの reference_files フィールド（オーバーライド用）
+//
+// InputFile / OutputFile / TargetFile は既に別経路で LLM に渡されるため、自動収集から除外されます。
+func (e *Engine) buildReferenceContext(step Step) string {
+	// 自動収集: 完了済みステップのドキュメント出力（入力・出力・対象と重複するものは除外）
+	autoRefs := e.collectAutoReferenceFiles(step.InputFile, step.OutputFile, step.TargetFile)
+
+	// 明示指定 + 自動収集をマージ（重複排除）
+	seen := make(map[string]bool)
+	var allRefs []string
+	for _, ref := range step.ReferenceFiles {
+		if !seen[ref] {
+			seen[ref] = true
+			allRefs = append(allRefs, ref)
+		}
+	}
+	for _, ref := range autoRefs {
+		if !seen[ref] {
+			seen[ref] = true
+			allRefs = append(allRefs, ref)
+		}
+	}
+
+	if len(allRefs) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n\n---\n# 参照ドキュメント（PRD・設計書）\n")
+	sb.WriteString("以下は本ワークフローで作成・レビュー済みの要件定義・設計ドキュメントです。\n")
+	sb.WriteString("実装・レビュー・修正はこれらのドキュメントに定義された要件・設計方針と整合している必要があります。\n\n")
+
+	for _, refPath := range allRefs {
+		content, err := fs.ReadFile(refPath)
+		if err != nil {
+			e.Logger.Warn("Failed to read reference file (skipping)", "path", refPath, "error", err)
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("## 参照: %s\n\n%s\n\n", refPath, content))
+	}
+
+	return sb.String()
 }
 
 // collectCodebaseContext はプロジェクトの既存コード構造を収集し、
