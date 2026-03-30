@@ -634,6 +634,19 @@ func (e *Engine) runGitBranch(step Step) error {
 	// ブランチ名をテンプレート変数に登録（{{branch_name}} で参照可能）
 	e.Vars["branch_name"] = branchName
 
+	// ブランチ名ファイルをブランチ成果物ディレクトリに移動
+	if step.BranchNameFile != "" {
+		destDir := filepath.Join("docs", branchName)
+		destFile := filepath.Join(destDir, filepath.Base(step.BranchNameFile))
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			e.Logger.Warn("Failed to create branch docs directory", "dir", destDir, "error", err)
+		} else if err := os.Rename(step.BranchNameFile, destFile); err != nil {
+			e.Logger.Warn("Failed to move branch name file", "from", step.BranchNameFile, "to", destFile, "error", err)
+		} else {
+			e.Logger.Info("Branch name file moved", "to", destFile)
+		}
+	}
+
 	return nil
 }
 
