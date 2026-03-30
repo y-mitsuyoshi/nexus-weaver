@@ -1,7 +1,18 @@
 #!/bin/sh
-# Pre-commit hook: gofmt チェック
+# Pre-commit hook: branch check & gofmt check
 # インストール: make setup-hooks
 
+# ブランチ名の取得
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# main ブランチへの直接コミットを禁止
+if [ "$BRANCH" = "main" ]; then
+    echo "ERROR: Direct commits to the 'main' branch are prohibited by project policy."
+    echo "Please create a feature branch (e.g., feature/, fix/, improvement/) and work there."
+    exit 1
+fi
+
+# gofmt チェック
 UNFORMATTED=$(gofmt -l . 2>&1)
 if [ -n "$UNFORMATTED" ]; then
     echo "Files must be gofmt'd. Run 'gofmt -w .' to fix:"
