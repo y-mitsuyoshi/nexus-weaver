@@ -25,7 +25,9 @@ func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 	combinedPrompt := formatPrompt(systemPrompt, userPrompt)
 
 	// ワンショット実行: -p オプションでプロンプトを渡す
-	args := []string{"-p", combinedPrompt}
+	// --no-ask-user: ask_user ツールを無効化し、質問でハングするのを防止
+	// -s: スクリプト向けサイレントモード（統計情報を除去し応答のみ出力）
+	args := []string{"-p", combinedPrompt, "--no-ask-user", "-s"}
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
