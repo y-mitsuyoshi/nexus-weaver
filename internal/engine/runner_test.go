@@ -417,3 +417,66 @@ func TestExtractLastNonEmptyLine(t *testing.T) {
 		})
 	}
 }
+
+func TestStripBeforeFirstHeading(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no heading returns original",
+			input: "just plain text\nno headings here",
+			want:  "just plain text\nno headings here",
+		},
+		{
+			name:  "heading at start stays",
+			input: "# Title\n\nContent here",
+			want:  "# Title\n\nContent here",
+		},
+		{
+			name:  "strips garbage before heading",
+			input: "[DRY-RUN] some log output\nmore junk\n# My PRD\n\n## Section 1\nContent",
+			want:  "# My PRD\n\n## Section 1\nContent",
+		},
+		{
+			name:  "strips metadata and logs",
+			input: "Step 1: analyze provider: copilot-cli\nStep 2: summarize\n\n# Feature PRD\n\nSummary",
+			want:  "# Feature PRD\n\nSummary",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripBeforeFirstHeading(tc.input)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsDocumentFile(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"docs/prd.md", true},
+		{"notes.txt", true},
+		{"doc.rst", true},
+		{"main.go", false},
+		{"config.yml", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			if got := isDocumentFile(tc.path); got != tc.want {
+				t.Errorf("isDocumentFile(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}

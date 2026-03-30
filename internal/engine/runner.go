@@ -342,17 +342,21 @@ func (e *Engine) runLLMTask(step Step) (string, error) {
 		}
 	}
 
-	// ワークフローコンテキスト（前ステップの成果要約）を注入
+	// ワークフローコンテキスト（前ステップの成果要約）をシステムプロンプトに注入
+	// ユーザー入力と分離することで、LLM がメタデータを出力に混入するリスクを低減する
 	contextSummary := e.buildContextSummary()
 	if contextSummary != "" {
-		inputData += contextSummary
+		systemPrompt += contextSummary
 	}
 
 	// プロジェクト構造をコンテキストとして自動注入
-	// コード生成のみならず、PRDやアーキテクチャ設計でもプロジェクト構造の把握は品質向上に寄与する
-	ctx := collectCodebaseContext()
-	inputData += ctx
-	e.Logger.Debug("Auto-injected codebase context", "output_file", step.OutputFile)
+	// ドキュメント生成（.md 出力）では注入しない — go.mod やファイル一覧は
+	// PRD・設計書の品質に寄与せず、LLM の注意を本来のタスクから逸らす原因になる
+	if !isDocumentFile(step.OutputFile) {
+		ctx := collectCodebaseContext()
+		inputData += ctx
+		e.Logger.Debug("Auto-injected codebase context", "output_file", step.OutputFile)
+	}
 
 	if isCodeFile(step.OutputFile) {
 		// 出力先ファイルが既に存在する場合はその内容も追加
@@ -413,6 +417,9 @@ func (e *Engine) runLLMTask(step Step) (string, error) {
 			} else if extracted, err := fs.ExtractCodeBlock(result, "md"); err == nil {
 				outputData = extracted
 			}
+			// Markdown ヘッダ（# で始まる行）より前のゴミ（実行ログ、メタデータ等）を除去する。
+			// LLM がシステムプロンプトの指示に反してヘッダ前に余計なテキストを出力した場合の安全策。
+			outputData = stripBeforeFirstHeading(outputData)
 		} else {
 			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
@@ -836,6 +843,32 @@ func (e *Engine) resolveStepPaths(step *Step) {
 	step.ReviewPromptFile = e.resolveVars(step.ReviewPromptFile)
 	step.BranchNameFile = e.resolveVars(step.BranchNameFile)
 	step.Command = e.resolveVars(step.Command)
+}
+
+// documentExtensions はドキュメント生成と判定する拡張子です。
+var documentExtensions = []string{".md", ".txt", ".rst"}
+
+// isDocumentFile は出力先がドキュメントファイルかどうかを判定します。
+func isDocumentFile(path string) bool {
+	for _, ext := range documentExtensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripBeforeFirstHeading は Markdown テキストから最初の見出し（# で始まる行）より前の
+// 余計なテキストを除去します。LLM が見出し前に実行ログやメタデータを出力した場合の安全策です。
+// 見出しが見つからない場合は元のテキストをそのまま返します。
+func stripBeforeFirstHeading(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "# ") {
+			return strings.Join(lines[i:], "\n")
+		}
+	}
+	return text
 }
 
 // codeExtensions はコード生成時に自動コンテキスト注入の対象となる拡張子です。
