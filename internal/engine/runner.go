@@ -503,7 +503,11 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 	// プロンプトの構築をコンテキスト（テスト失敗かレビューか）に合わせる
 	contextDesc := "以下のテストが失敗しました。エラーを修正してください。\n\nコマンド: " + step.Command
 	if step.Type == "review" {
-		contextDesc = "以下のレビュー指摘を受けました。コードを修正してください。"
+		if isCodeFile(step.TargetFile) {
+			contextDesc = "以下のレビュー指摘を受けました。コードを修正してください。"
+		} else {
+			contextDesc = fmt.Sprintf("以下のレビュー指摘を受けました。指摘内容を反映して %s を改善してください。\n指摘への回答ではなく、指摘を踏まえた修正済みドキュメント全文を出力してください。", step.TargetFile)
+		}
 	}
 
 	userPrompt := fmt.Sprintf("%s\n\n指摘内容・エラー出力:\n%s",
@@ -545,9 +549,35 @@ func (e *Engine) runFixer(step Step, errorOrReviewOutput string) error {
 		} else {
 			return fmt.Errorf("fixer output does not contain a valid code block for %s", step.TargetFile)
 		}
+	} else if strings.HasSuffix(step.TargetFile, ".md") {
+		if extracted, err := fs.ExtractCodeBlock(result, "markdown"); err == nil {
+			fixCode = extracted
+		} else if extracted, err := fs.ExtractCodeBlock(result, "md"); err == nil {
+			fixCode = extracted
+		} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+			fixCode = extracted
+		}
+	} else if strings.HasSuffix(step.TargetFile, ".yml") || strings.HasSuffix(step.TargetFile, ".yaml") {
+		if extracted, err := fs.ExtractCodeBlock(result, "yaml"); err == nil {
+			fixCode = extracted
+		} else if extracted, err := fs.ExtractCodeBlock(result, "yml"); err == nil {
+			fixCode = extracted
+		} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
+			fixCode = extracted
+		}
 	} else {
 		if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 			fixCode = extracted
+		}
+	}
+
+	// ドキュメントファイルの場合、上書き前に現在のバージョンをバックアップ（積み上げ式保全）
+	if !isCodeFile(step.TargetFile) && currentContent != "" {
+		backupPath := generateVersionedBackupPath(step.TargetFile)
+		if err := fs.WriteFile(backupPath, currentContent); err != nil {
+			e.Logger.Warn("Failed to save document version backup", "path", backupPath, "error", err)
+		} else {
+			e.Logger.Info("Document version preserved", "backup", backupPath)
 		}
 	}
 
@@ -778,6 +808,19 @@ func isCodeFile(path string) bool {
 		}
 	}
 	return false
+}
+
+// generateVersionedBackupPath は指定パスに対して未使用のバージョン付きバックアップパスを生成します。
+// 例: architecture.md → architecture_v1.md, architecture_v2.md, ...
+func generateVersionedBackupPath(path string) string {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	for v := 1; ; v++ {
+		candidate := fmt.Sprintf("%s_v%d%s", base, v, ext)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 // collectCodebaseContext はプロジェクトの既存コード構造を収集し、
