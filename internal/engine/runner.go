@@ -403,6 +403,16 @@ func (e *Engine) runLLMTask(step Step) (string, error) {
 			} else if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
 			}
+		} else if strings.HasSuffix(step.OutputFile, ".md") {
+			// Markdown ファイルの場合: LLM が ```markdown で囲んだ場合のみアンラップする。
+			// 汎用コードブロック抽出（lang=""）は使わない。Markdown 文書は本文中に
+			// コードブロック例を含むことが多く、汎用抽出すると最初のコードブロック
+			// （例: ユースシナリオの出力例）だけが保存されてしまうため。
+			if extracted, err := fs.ExtractCodeBlock(result, "markdown"); err == nil {
+				outputData = extracted
+			} else if extracted, err := fs.ExtractCodeBlock(result, "md"); err == nil {
+				outputData = extracted
+			}
 		} else {
 			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
