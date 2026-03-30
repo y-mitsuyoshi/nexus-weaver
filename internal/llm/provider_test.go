@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // コンパイル時のインターフェース準拠チェック
 var _ LLMProvider = (*GeminiCLI)(nil)
@@ -135,7 +138,7 @@ func TestCleanCopilotOutput(t *testing.T) {
 			want:  "improvement/dry-run-step-summary",
 		},
 		{
-			name: "shell execution block",
+			name: "shell execution block with bullet",
 			input: "● Output branch name (shell)\n" +
 				"  │ echo \"improvement/dry-run-step-summary\"\n" +
 				"  └ 2 lines...\n" +
@@ -144,14 +147,26 @@ func TestCleanCopilotOutput(t *testing.T) {
 			want: "improvement/dry-run-step-summary",
 		},
 		{
-			name: "multiple blocks",
+			name: "failed and success markers",
+			input: "✗ Check existing test files (shell)\n" +
+				"\n" +
+				"✗ Find test files (shell)\n" +
+				"\n" +
+				"actual content here\n" +
+				"\n" +
+				"✓ Edit main.go\n" +
+				"more actual content",
+			want: "actual content here\n\nmore actual content",
+		},
+		{
+			name: "tree formatting with branch markers",
 			input: "● Run command (shell)\n" +
+				"  ├ step 1\n" +
 				"  │ ls -la\n" +
 				"  └ 5 lines...\n" +
 				"\n" +
-				"result line 1\n" +
-				"result line 2",
-			want: "result line 1\nresult line 2",
+				"result line",
+			want: "result line",
 		},
 		{
 			name:  "empty input",
@@ -166,5 +181,43 @@ func TestCleanCopilotOutput(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFormatPrompt_ContainsGuard(t *testing.T) {
+	result := formatPrompt("you are a PM", "write a PRD")
+	if !strings.Contains(result, "<instructions>") {
+		t.Error("expected <instructions> guard block")
+	}
+	if !strings.Contains(result, "テキスト生成専用モード") {
+		t.Error("expected text-generation-only guard")
+	}
+	if !strings.Contains(result, "ツール呼び出しは一切行わない") {
+		t.Error("expected no-tool-use instruction")
+	}
+	if !strings.Contains(result, "<system>") {
+		t.Error("expected <system> block")
+	}
+	if !strings.Contains(result, "you are a PM") {
+		t.Error("expected system prompt content")
+	}
+	if !strings.Contains(result, "<user>") {
+		t.Error("expected <user> block")
+	}
+	if !strings.Contains(result, "write a PRD") {
+		t.Error("expected user prompt content")
+	}
+}
+
+func TestFormatPrompt_NoSystemPrompt(t *testing.T) {
+	result := formatPrompt("", "just a question")
+	if strings.Contains(result, "<system>") {
+		t.Error("should not contain <system> when systemPrompt is empty")
+	}
+	if !strings.Contains(result, "<instructions>") {
+		t.Error("guard should always be present")
+	}
+	if !strings.Contains(result, "just a question") {
+		t.Error("expected user prompt content")
 	}
 }

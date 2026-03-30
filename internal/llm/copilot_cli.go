@@ -42,20 +42,38 @@ func (c *CopilotCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 	return cleanCopilotOutput(stdout.String()), nil
 }
 
-// cleanCopilotOutput は Copilot CLI の出力からシェル実行ブロックの
-// フォーマット行（●, │, └ で始まる行）を除去し、実際の応答テキストのみを返します。
+// cleanCopilotOutput は Copilot CLI の出力からエージェントモードの
+// UI装飾行（ツール実行マーカー・ツリー罫線など）を除去し、実際の応答テキストのみを返します。
 func cleanCopilotOutput(raw string) string {
 	lines := strings.Split(raw, "\n")
 	var cleaned []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Copilot CLI のシェル実行ブロック行をスキップ
-		if strings.HasPrefix(trimmed, "●") ||
-			strings.HasPrefix(trimmed, "│") ||
-			strings.HasPrefix(trimmed, "└") {
+		if isCopilotUILine(trimmed) {
 			continue
 		}
 		cleaned = append(cleaned, line)
 	}
 	return strings.TrimSpace(strings.Join(cleaned, "\n"))
+}
+
+// copilotUIPrefixes は Copilot CLI エージェントモードが出力する UI 装飾の先頭文字一覧です。
+var copilotUIPrefixes = []string{
+	"●", // ツール実行開始
+	"✗", // ツール実行失敗
+	"✓", // ツール実行成功
+	"│", // ツリー罫線（縦）
+	"└", // ツリー罫線（角）
+	"├", // ツリー罫線（分岐）
+	"─", // ツリー罫線（横）
+}
+
+// isCopilotUILine は Copilot CLI エージェントモードの UI 装飾行かどうかを判定します。
+func isCopilotUILine(trimmed string) bool {
+	for _, prefix := range copilotUIPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }

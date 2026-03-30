@@ -302,7 +302,7 @@ func (e *Engine) runReviewGate(reviews []Step) error {
 // runLLMTask は llm_task タイプのステップを実行します。
 // 1. 指定モデルのプロバイダを取得
 // 2. システムプロンプトと入力ファイルを読み込み
-// 3. コード生成時は既存プロジェクト構造を自動注入
+// 3. プロジェクト構造を自動注入（全ステップ共通）
 // 4. LLM に Generate を依頼
 // 5. 結果を出力ファイルに書き込み
 func (e *Engine) runLLMTask(step Step) error {
@@ -336,12 +336,13 @@ func (e *Engine) runLLMTask(step Step) error {
 		inputData += contextSummary
 	}
 
-	// コード生成時は既存プロジェクト構造をコンテキストとして自動注入
-	if isCodeFile(step.OutputFile) {
-		ctx := collectCodebaseContext()
-		inputData += ctx
-		e.Logger.Debug("Auto-injected codebase context", "output_file", step.OutputFile)
+	// プロジェクト構造をコンテキストとして自動注入
+	// コード生成のみならず、PRDやアーキテクチャ設計でもプロジェクト構造の把握は品質向上に寄与する
+	ctx := collectCodebaseContext()
+	inputData += ctx
+	e.Logger.Debug("Auto-injected codebase context", "output_file", step.OutputFile)
 
+	if isCodeFile(step.OutputFile) {
 		// 出力先ファイルが既に存在する場合はその内容も追加
 		if existing, readErr := fs.ReadFile(step.OutputFile); readErr == nil {
 			inputData += fmt.Sprintf("\n\n## 現在の %s の内容（互換性を維持してください）\n```\n%s\n```\n", step.OutputFile, existing)
