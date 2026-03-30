@@ -1,24 +1,63 @@
-[DRY-RUN] ワークフロー: my-workflow (3 ステップ)
+# dry-run LLMサマリー表示改善 PRD
 
-  Step 1: generate_branch_name
-    Provider : copilot_cli
-    Model    : claude-sonnet-4.6
-    Input    : inbox/idea.txt
-    Output   : (stdout)
+## 1. エグゼクティブサマリー
 
-  Step 2: code_generation
-    Provider : gemini_cli
-    Model    : gemini-2.0-flash
-    Input    : (stdout from step 1)
-    Output   : internal/engine/runner.go
+`--dry-run` 実行時に各ステップの LLM プロバイダ名とモデル名をサマリーに表示することで、ユーザーがワークフロー実行前にどの LLM が使われるかを一目で把握できるようにする。設定ミスや意図しないモデル選択を事前に検出できるようになり、デバッグコストと実行失敗リスクを低減する。
 
-  Step 3: review
-    Provider : copilot_cli
-    Model    : (unset → default が使用されます)
-    Input    : internal/engine/runner.go
-    Output   : (stdout)
+---
 
-[使用LLM一覧]
-  - copilot_cli / claude-sonnet-4.6
-  - gemini_cli  / gemini-2.0-flash
-  - copilot_cli / (default)
+## 2. 背景と課題
+
+現在の `--dry-run` 出力はステップ名・実行順序・入出力ファイルなどを表示するが、各ステップで使用される LLM プロバイダ（例: `copilot_cli`, `gemini_cli`, `local_qwen`）とモデル識別子（例: `claude-sonnet-4.6`, `gemini-2.0-flash`）は表示されない。
+
+このため以下の問題が発生している：
+
+- 開発者・オペレーターが dry-run を実行しても、実際にどの LLM に問い合わせるかが不明のまま本番実行するしかない
+- ワークフロー YAML のプロバイダ設定ミス（typo、デフォルト値の意図せぬ適用）が dry-run 段階で発見できない
+- 複数ステップで異なるプロバイダを使う複合ワークフローでは、どのステップがどのモデルを使うか把握するにはソースや YAML を読む必要があり、認知負荷が高い
+
+---
+
+## 3. ターゲットユーザー
+
+| ペルソナ | 説明 |
+|----------|------|
+| ワークフロー作成者 | YAML でワークフローを定義し、実行前に設定が正しいか確認したい開発者・エンジニア |
+| CI/CD オペレーター | パイプライン上で `--dry-run` を使い実行計画を検証する SRE・DevOps エンジニア |
+| 新規利用者 | どのプロバイダ・モデルが使われるか学習・確認しながらツールを試しているユーザー |
+
+---
+
+## 4. ゴール / 非ゴール
+
+### ゴール
+- `--dry-run` 実行時のサマリー出力に、各ステップの `provider` と `model` フィールドを表示する
+- プロバイダ・モデルが未設定（デフォルト値）の場合もその旨を明示的に表示する
+- 既存のサマリー出力フォーマットの構造・視認性を損なわない形で情報を追加する
+- 変更は dry-run 出力のみに限定し、通常実行の動作には一切影響しない
+
+### 非ゴール
+- 実際の LLM への疎通確認（接続テスト、認証確認）は dry-run では行わない
+- プロバイダ・モデル設定のバリデーション（値が有効かの検証）はこの PRD のスコープ外
+- dry-run 以外の実行時ログへのプロバイダ情報付与は対象外
+- GUI・Web UI への反映は対象外
+
+---
+
+## 5. コア機能
+
+| 優先度 | 機能 | 説明 |
+|--------|------|------|
+| P0 | ステップサマリーへの provider 表示 | dry-run サマリーの各ステップ行に、ワークフロー YAML で定義された `provider` フィールドの値を表示する。未設定の場合は `(unset)` と明示する |
+| P0 | ステップサマリーへの model 表示 | 同サマリーに `model` フィールドの値を表示する。未設定の場合は `(unset)` と明示する |
+| P2 | サマリー末尾の使用LLM一覧 | dry-run 全体サマリーの末尾に、ワークフロー全体で使われるユニークな provider/model の組み合わせ一覧をまとめて表示する |
+
+---
+
+## 6. ユースシナリオ
+
+### シナリオ1: 通常の dry-run でプロバイダ・モデルを確認する
+
+- **前提条件**: ユーザーは2ステップのワークフロー YAML（各ステップに `provider` と `model` が設定済み）を用意している
+- **操作**: `nexus-weaver --dry-run` を実行する
+- **期待結果**: 各ステップの出力行に provider と model が表示される
