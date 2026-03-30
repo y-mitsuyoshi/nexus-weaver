@@ -657,12 +657,14 @@ func (e *Engine) runSingleReview(step Step) (approved bool, fixApplied bool, err
 	fmt.Println("================================================================================")
 
 	// 履歴を保存（ブランチ名があればサブディレクトリに整理）
+	// 同一ファイルに追記することで過去のレビューラウンドの結果も保持する
 	reviewDir := "docs/reviews"
 	if bn, ok := e.Vars["branch_name"]; ok && bn != "" {
 		reviewDir = fmt.Sprintf("docs/%s/reviews", bn)
 	}
 	reviewLogPath := fmt.Sprintf("%s/review-%s.md", reviewDir, step.ID)
-	if err := fs.WriteFile(reviewLogPath, result); err != nil {
+	entry := fmt.Sprintf("\n---\n## Review round\n\n%s\n", result)
+	if err := fs.AppendFile(reviewLogPath, entry); err != nil {
 		e.Logger.Warn("Failed to save review log", "error", err)
 	}
 
