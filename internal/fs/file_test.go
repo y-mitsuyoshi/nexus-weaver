@@ -121,3 +121,48 @@ func TestExtractCodeBlock_ClosingBackticksNoNewline(t *testing.T) {
 		t.Errorf("expected 'package main', got: %s", result)
 	}
 }
+
+func TestAppendFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/append_test.md"
+
+	// 新規作成
+	if err := AppendFile(path, "first entry\n"); err != nil {
+		t.Fatalf("first append failed: %v", err)
+	}
+	content, err := ReadFile(path)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if content != "first entry\n" {
+		t.Errorf("expected 'first entry\\n', got %q", content)
+	}
+
+	// 追記
+	if err := AppendFile(path, "second entry\n"); err != nil {
+		t.Fatalf("second append failed: %v", err)
+	}
+	content, err = ReadFile(path)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if content != "first entry\nsecond entry\n" {
+		t.Errorf("expected both entries, got %q", content)
+	}
+}
+
+func TestAppendFile_CreatesDir(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/sub/dir/append_test.md"
+
+	if err := AppendFile(path, "content\n"); err != nil {
+		t.Fatalf("append with mkdir failed: %v", err)
+	}
+	content, err := ReadFile(path)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if content != "content\n" {
+		t.Errorf("expected 'content\\n', got %q", content)
+	}
+}
