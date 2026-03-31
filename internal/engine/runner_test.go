@@ -460,6 +460,43 @@ func TestStripBeforeFirstHeading(t *testing.T) {
 	}
 }
 
+func TestStripWorkflowContext(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no context returns original",
+			input: "# PRD\n\n## Section 1\nContent",
+			want:  "# PRD\n\n## Section 1\nContent",
+		},
+		{
+			name:  "strips context with separator",
+			input: "# PRD\n\n## Section 1\nContent\n\n---\n# ワークフロー実行コンテキスト（前ステップの成果）\nメタデータ\n## ステップ: foo",
+			want:  "# PRD\n\n## Section 1\nContent",
+		},
+		{
+			name:  "strips context without separator",
+			input: "# PRD\n\nContent\n# ワークフロー実行コンテキスト（前ステップの成果）\nメタデータ",
+			want:  "# PRD\n\nContent",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripWorkflowContext(tc.input)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestIsDocumentFile(t *testing.T) {
 	tests := []struct {
 		path string

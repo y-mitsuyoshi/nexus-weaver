@@ -44,16 +44,8 @@ func (g *GeminiCLI) Generate(systemPrompt, userPrompt string) (string, error) {
 
 // formatPrompt はシステムプロンプトとユーザープロンプトを
 // 構造化されたテキストに結合します。
-// テキスト生成専用ガードを含め、エージェントモードへの移行を防止します。
 func formatPrompt(systemPrompt, userPrompt string) string {
 	var sb strings.Builder
-	// テキスト生成専用ガード（エージェントモード防止）
-	sb.WriteString("<instructions>\n")
-	sb.WriteString("あなたはテキスト生成専用モードで動作しています。\n")
-	sb.WriteString("- ファイルの読み書き、シェルコマンドの実行、コードの実行は一切行わないでください\n")
-	sb.WriteString("- ツール呼び出しは一切行わないでください\n")
-	sb.WriteString("- 求められたテキストのみを直接出力してください\n")
-	sb.WriteString("</instructions>\n\n")
 	if systemPrompt != "" {
 		sb.WriteString("<system>\n")
 		sb.WriteString(systemPrompt)
