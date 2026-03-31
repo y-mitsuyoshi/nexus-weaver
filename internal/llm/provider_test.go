@@ -184,16 +184,10 @@ func TestCleanCopilotOutput(t *testing.T) {
 	}
 }
 
-func TestFormatPrompt_ContainsGuard(t *testing.T) {
+func TestFormatPrompt_StructuredOutput(t *testing.T) {
 	result := formatPrompt("you are a PM", "write a PRD")
-	if !strings.Contains(result, "<instructions>") {
-		t.Error("expected <instructions> guard block")
-	}
-	if !strings.Contains(result, "テキスト生成専用モード") {
-		t.Error("expected text-generation-only guard")
-	}
-	if !strings.Contains(result, "ツール呼び出しは一切行わない") {
-		t.Error("expected no-tool-use instruction")
+	if strings.Contains(result, "<instructions>") {
+		t.Error("should not contain <instructions> guard block")
 	}
 	if !strings.Contains(result, "<system>") {
 		t.Error("expected <system> block")
@@ -213,9 +207,6 @@ func TestFormatPrompt_NoSystemPrompt(t *testing.T) {
 	result := formatPrompt("", "just a question")
 	if strings.Contains(result, "<system>") {
 		t.Error("should not contain <system> when systemPrompt is empty")
-	}
-	if !strings.Contains(result, "<instructions>") {
-		t.Error("guard should always be present")
 	}
 	if !strings.Contains(result, "just a question") {
 		t.Error("expected user prompt content")

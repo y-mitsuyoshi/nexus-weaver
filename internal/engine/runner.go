@@ -427,6 +427,8 @@ func (e *Engine) runLLMTask(step Step) (string, error) {
 			// Markdown ヘッダ（# で始まる行）より前のゴミ（実行ログ、メタデータ等）を除去する。
 			// LLM がシステムプロンプトの指示に反してヘッダ前に余計なテキストを出力した場合の安全策。
 			outputData = stripBeforeFirstHeading(outputData)
+			// LLM がシステムプロンプトのワークフロー実行コンテキストを出力にコピーした場合に除去する。
+			outputData = stripWorkflowContext(outputData)
 		} else {
 			if extracted, err := fs.ExtractCodeBlock(result, ""); err == nil {
 				outputData = extracted
@@ -891,6 +893,29 @@ func stripBeforeFirstHeading(text string) string {
 		}
 	}
 	return text
+}
+
+// stripWorkflowContext は LLM 出力からワークフロー実行コンテキストのメタデータブロックを除去します。
+// buildContextSummary() で生成されるコンテキストが LLM 出力に転記された場合の安全策です。
+func stripWorkflowContext(text string) string {
+	const marker = "# ワークフロー実行コンテキスト"
+	lines := strings.Split(text, "\n")
+	cutStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, marker) {
+			// "---" 区切り行がマーカーの直前にあればそこから切る
+			if cutStart == -1 && i > 0 && strings.TrimSpace(lines[i-1]) == "---" {
+				cutStart = i - 1
+			} else if cutStart == -1 {
+				cutStart = i
+			}
+			break
+		}
+	}
+	if cutStart == -1 {
+		return text
+	}
+	return strings.TrimRight(strings.Join(lines[:cutStart], "\n"), "\n\t ")
 }
 
 // codeExtensions はコード生成時に自動コンテキスト注入の対象となる拡張子です。
